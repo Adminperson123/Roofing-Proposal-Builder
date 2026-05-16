@@ -639,6 +639,8 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
   const [reason, setReason] = useState('')
   const [fieldToken, setFieldToken] = useState(proposal.field_token || null)
   const [showField, setShowField] = useState(false)
+  const [inspections, setInspections] = useState([])
+  const [creatingInsp, setCreatingInsp] = useState(false)
 
   // Re-fetch the proposal to get a fresh field_token if we didn't get one from the list.
   useEffect(() => {
@@ -647,6 +649,35 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
       if (d.field_token) setFieldToken(d.field_token)
     }).catch(() => {})
   }, [proposal.id, fieldToken])
+
+  // Load existing inspections for this proposal
+  useEffect(() => {
+    fetch(`/api/inspections?proposal_id=${proposal.id}`).then(r => r.json()).then(d => {
+      setInspections(d.inspections || [])
+    }).catch(() => {})
+  }, [proposal.id])
+
+  async function newInspection() {
+    setCreatingInsp(true)
+    try {
+      const r = await fetch('/api/inspections', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proposal_id:      proposal.id,
+          customer_name:    proposal.customer_name,
+          customer_address: proposal.customer_address,
+          customer_phone:   proposal.customer_phone || null,
+          customer_email:   proposal.customer_email || null,
+          rep_name:         proposal.rep_name || null,
+          ghl_contact_id:   proposal.ghl_contact_id || null,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Failed to create inspection')
+      window.location.href = `/inspection/${d.inspection.id}`
+    } catch (e) { alert(e.message) }
+    finally { setCreatingInsp(false) }
+  }
 
   async function sendChat() {
     const inst = draft.trim()
@@ -755,6 +786,40 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
                   </div>
                 </div>
               </div>
+            )}
+          </div>
+
+          <div className="inspection-block">
+            <div className="inspection-head">
+              <div>
+                <div className="inspection-title">🔍 Site Inspection</div>
+                <div className="inspection-sub">Step-by-step on-site assessment. Auto-generates a printable report.</div>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={newInspection} disabled={creatingInsp}>
+                {creatingInsp ? 'Creating…' : '+ New Inspection'}
+              </button>
+            </div>
+            {inspections.length > 0 && (
+              <ul className="inspection-list">
+                {inspections.map(ins => (
+                  <li key={ins.id}>
+                    <div className="inspection-row">
+                      <div>
+                        <span className="inspection-num">{ins.inspection_num}</span>
+                        <span className={`inspection-status inspection-status-${ins.status}`}>{(ins.status || 'draft').toUpperCase()}</span>
+                      </div>
+                      <div className="meta">{new Date(ins.updated_at).toLocaleDateString()}</div>
+                      <div className="inspection-actions">
+                        <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}`} target="_blank" rel="noreferrer">{ins.status === 'submitted' ? 'View' : 'Continue'}</a>
+                        {ins.status === 'submitted' && <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}/pdf`} target="_blank" rel="noreferrer">📄 Report</a>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!inspections.length && (
+              <div className="inspection-empty">No inspections yet. Tap "+ New Inspection" to start a step-by-step assessment.</div>
             )}
           </div>
 
@@ -1263,6 +1328,18 @@ function GlobalCSS() {
       .field-link-hint strong{color:var(--navy);font-weight:800;display:block;margin-bottom:6px;font-size:13px}
       .field-link-hint ol{margin:0;padding-left:18px}
       .field-link-hint li{margin-bottom:3px}
+      .inspection-block{background:linear-gradient(180deg,#F0FDF4,#fff);border:1px solid #A7F3D0;border-radius:12px;padding:14px 16px}
+      .inspection-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+      .inspection-title{font-size:14px;font-weight:900;color:var(--navy)}
+      .inspection-sub{font-size:11.5px;color:var(--mute);margin-top:2px}
+      .inspection-list{list-style:none;margin-top:12px;display:flex;flex-direction:column;gap:8px}
+      .inspection-row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border:1px solid var(--bord);border-radius:9px;padding:10px 14px;flex-wrap:wrap}
+      .inspection-num{font-family:monospace;font-weight:800;color:var(--navy);font-size:13px;margin-right:8px}
+      .inspection-status{display:inline-block;padding:2px 9px;border-radius:20px;font-size:9px;font-weight:900;letter-spacing:.5px}
+      .inspection-status-draft{background:#FEF3C7;color:#92400E}
+      .inspection-status-submitted{background:#D1FAE5;color:#065F46}
+      .inspection-actions{display:flex;gap:6px;flex-wrap:wrap}
+      .inspection-empty{margin-top:12px;padding:14px;background:#fff;border:1px dashed var(--bord);border-radius:9px;font-size:12px;color:var(--mute);text-align:center;font-style:italic}
       .ai-chat{background:linear-gradient(180deg,#FAFAFC,#fff);border:1px solid var(--bord);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
       .ai-chat-head{padding-bottom:12px;border-bottom:1px solid var(--bord)}
       .ai-chat-title{font-size:15px;font-weight:900;color:var(--navy)}
