@@ -223,10 +223,25 @@ export default function PublicProposal() {
             <div className="pub-section-title">🏭 MATERIALS WE USE & PARTNERSHIPS</div>
             <p className="pub-section-sub" style={{ marginBottom: 16 }}>We only install materials from manufacturers we have personally vetted on hundreds of installs. Every product carries its own multi-decade manufacturer warranty on top of our workmanship guarantee.</p>
             <div className="pub-mat-grid">
-              <MatCard logo={brandAssets.gaf}            name="GAF"            tag="Timberline HDZ / UHDZ Architectural Shingles" warr="Up to Lifetime Limited Warranty" />
-              <MatCard logo={brandAssets.owens_corning}  name="Owens Corning"  tag="Duration / Duration COOL Series"              warr="Lifetime + WindProven™ Limited" />
-              <MatCard logo={brandAssets.eagle}          name="Eagle Roofing"  tag="Concrete Tile (flat & S-type)"                warr="50-year limited transferable" />
-              <MatCard logo={brandAssets.boral}          name="Boral / Westlake" tag="Premium tile + accessory products"          warr="Limited lifetime on select lines" />
+              <MatCard logo={brandAssets.gaf}            name="GAF"             tag="Timberline HDZ / UHDZ Architectural Shingles" warr="Up to Lifetime Limited Warranty" />
+              <MatCard logo={brandAssets.owens_corning}  name="Owens Corning"   tag="Duration / Duration COOL Series"              warr="Lifetime + WindProven™ Limited" />
+              <MatCard logo={brandAssets.westlake}       name="Westlake Royal"  tag="Concrete & clay tile, premium accessory products" warr="50-year limited transferable" />
+              <MatCard logo={brandAssets.eagle}          name="Eagle Roofing"   tag="Concrete Tile (flat & S-type)"                warr="50-year limited transferable" />
+              <MatCard logo={brandAssets.titanium}       name="Titanium"        tag="High-performance synthetic underlayments"     warr="Up to lifetime limited" />
+              <MatCard logo={brandAssets.boral}          name="Boral"           tag="Specialty tile + accessory products"          warr="Limited lifetime on select lines" />
+            </div>
+            <div className="pub-partners">
+              <div className="pub-partners-lbl">DISTRIBUTOR PARTNERSHIPS</div>
+              <div className="pub-partners-grid">
+                <div className="pub-partner-card">
+                  <strong>QXO</strong>
+                  <span>National roofing distributor — preferred pricing, faster delivery, full warranty registration support.</span>
+                </div>
+                <div className="pub-partner-card">
+                  <strong>SRS Distribution</strong>
+                  <span>Largest US roofing distributor — full inventory access, dedicated account management, certified-contractor benefits.</span>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -656,6 +671,12 @@ export default function PublicProposal() {
         .pub-mat-name{font-size:18px;font-weight:900;color:var(--navy);letter-spacing:.4px}
         .pub-mat-tag{font-size:13px;color:var(--mute);margin-top:4px}
         .pub-mat-warr{font-size:11px;color:var(--gold);font-weight:800;margin-top:8px;letter-spacing:.5px;text-transform:uppercase}
+        .pub-partners{margin-top:18px;padding-top:18px;border-top:1px solid var(--bord)}
+        .pub-partners-lbl{font-size:10px;font-weight:900;color:var(--mute);letter-spacing:1.6px;margin-bottom:10px}
+        .pub-partners-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .pub-partner-card{background:#FAFAF8;border:1px solid var(--bord);border-left:4px solid var(--navy);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+        .pub-partner-card strong{font-size:15px;font-weight:900;color:var(--navy);letter-spacing:.4px}
+        .pub-partner-card span{font-size:12px;color:var(--mute);line-height:1.5}
         .pub-process{}
         .pub-process-list{display:flex;flex-direction:column;gap:12px;margin-top:6px}
         .pub-process-step{display:flex;align-items:flex-start;gap:14px;background:#fff;border-radius:12px;padding:16px 18px;border:1px solid var(--bord);position:relative}
@@ -777,6 +798,7 @@ export default function PublicProposal() {
           .pub-cost-grid{grid-template-columns:1fr}
           .pub-cost{padding:18px}
           .pub-experience-options{grid-template-columns:1fr}
+          .pub-partners-grid{grid-template-columns:1fr}
           .pub-experience{padding:22px 20px}
           .pub-experience>h3{font-size:20px}
         }

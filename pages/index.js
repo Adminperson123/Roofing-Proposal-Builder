@@ -13,8 +13,22 @@ const ADDON_DEFS = [
   { id:'solar',     label:'Solar Panel Remove/Reset',   icon:'☀️' },
 ]
 
-const blankCustomer = { name:'', phone:'', email:'', address:'', rep:'', ghlId:'', notes:'' }
+const blankCustomer = { name:'', phone:'', email:'', address:'', city:'', state:'', zip:'', lat:null, lng:null, rep:'', ghlId:'', notes:'' }
 const blankScope    = { roofType:'shingle', tileSubtype:'flat', squares:14, pitch:5, stories:1, layers:1, deckingSheets:0, permit:0, addons:[] }
+
+const REP_STORAGE_KEY = 'gpr_last_rep'
+
+const NOTES_TEMPLATES = {
+  shingle:      'Standard architectural shingle tear-off and re-install. Check decking integrity during tear-off. Confirm color choice with homeowner before order. Run magnetic sweep daily.',
+  tile_flat:    'Flat concrete tile reset. Reuse existing tiles where possible — order ~10% replacements for breakage. Confirm tile color + finish. Inspect underlayment and replace as needed.',
+  'tile_s-type':'S-type concrete tile re-install. Confirm tile profile and color match. Inspect flashings around chimney/skylight/valleys. Plan for staged delivery of pallets.',
+}
+
+function getNotesTemplate(roofType, tileSubtype) {
+  if (roofType === 'tile') return NOTES_TEMPLATES[`tile_${tileSubtype}`] || NOTES_TEMPLATES.tile_flat
+  return NOTES_TEMPLATES.shingle
+}
+const ALL_NOTES_TEMPLATES = Object.values(NOTES_TEMPLATES)
 
 export default function Home() {
   const router = useRouter()
@@ -32,6 +46,27 @@ export default function Home() {
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setSettings(d.settings)).catch(() => {})
   }, [])
+
+  // Sales Rep auto-remember: on mount, hydrate from localStorage. On change, persist.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = window.localStorage.getItem(REP_STORAGE_KEY)
+    if (saved) setCustomer(c => c.rep ? c : { ...c, rep: saved })
+  }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (customer.rep) window.localStorage.setItem(REP_STORAGE_KEY, customer.rep)
+  }, [customer.rep])
+
+  // Inspection notes auto-template: fill when roofType/tileSubtype changes, but only if
+  // the field is empty OR still contains a previous auto-template (rep hasn't customized).
+  useEffect(() => {
+    const next = getNotesTemplate(scope.roofType, scope.tileSubtype)
+    setCustomer(c => {
+      if (!c.notes || ALL_NOTES_TEMPLATES.includes(c.notes)) return { ...c, notes: next }
+      return c
+    })
+  }, [scope.roofType, scope.tileSubtype])
 
   useEffect(() => {
     const t = setInterval(async () => {
@@ -143,6 +178,7 @@ export default function Home() {
             photos={photos} setPhotos={setPhotos}
             generating={generating} genError={genError}
             onGenerate={generate}
+            reps={settings?.reps || []}
           />
         )
       )}
@@ -158,7 +194,7 @@ export default function Home() {
   )
 }
 
-function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, generating, genError, onGenerate }) {
+function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, generating, genError, onGenerate, reps }) {
   const LABELS = ['Customer', 'Scope', 'Photos', 'Review']
   const canNext =
     step === 0 ? customer.name && customer.phone && customer.email && customer.address && customer.rep :
@@ -181,7 +217,7 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
 
       <main className="main">
         <div className="card">
-          {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} />}
+          {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} reps={reps} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
           {step === 2 && <StepPhotos   photos={photos}     setPhotos={setPhotos} />}
           {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} onGenerate={onGenerate} generating={generating} genError={genError} />}
@@ -198,8 +234,11 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
   )
 }
 
-function StepCustomer({ customer, setCustomer }) {
+function StepCustomer({ customer, setCustomer, reps = [] }) {
   const set = (k, v) => setCustomer(c => ({ ...c, [k]: v }))
+  function onAddressPick(structured) {
+    setCustomer(c => ({ ...c, city: structured.city, state: structured.state, zip: structured.zip, lat: structured.lat, lng: structured.lng }))
+  }
   return (
     <div>
       <h2 className="step-title">CUSTOMER INFO</h2>
@@ -213,14 +252,50 @@ function StepCustomer({ customer, setCustomer }) {
         <Field label="Full Name *"      value={customer.name}    onChange={v=>set('name',v)}    placeholder="Jane Smith" />
         <Field label="Phone *"          value={customer.phone}   onChange={v=>set('phone',v)}   placeholder="(909) 555-0100" type="tel" />
         <Field label="Email *"          value={customer.email}   onChange={v=>set('email',v)}   placeholder="jane@email.com" type="email" />
-        <Field label="Sales Rep *"      value={customer.rep}     onChange={v=>set('rep',v)}     placeholder="Carlos M." />
-        <AddressAutocomplete full label="Property Address *" value={customer.address} onChange={v=>set('address',v)} placeholder="Start typing — we'll autofill" />
+        <RepField reps={reps} value={customer.rep} onChange={v=>set('rep',v)} />
+        <AddressAutocomplete full label="Property Address *" value={customer.address} onChange={v=>set('address',v)} onPick={onAddressPick} placeholder="Start typing — we'll autofill city/state/zip" />
+        {(customer.city || customer.state || customer.zip) && (
+          <div className="field full addr-derived">
+            <span className="addr-derived-lbl">Auto-detected:</span>
+            {customer.city && <span className="addr-pill">📍 {customer.city}</span>}
+            {customer.state && <span className="addr-pill">{customer.state}</span>}
+            {customer.zip && <span className="addr-pill">{customer.zip}</span>}
+            {customer.lat && customer.lng && <span className="addr-pill">{customer.lat.toFixed(4)}, {customer.lng.toFixed(4)}</span>}
+          </div>
+        )}
         <Field full label="GHL Contact ID (auto-filled)" value={customer.ghlId} onChange={v=>set('ghlId',v)} placeholder="Auto-populated from GHL" />
         <div className="field full">
           <label>Inspection Notes / Project Detail</label>
-          <textarea rows={3} value={customer.notes} onChange={e=>set('notes',e.target.value)} placeholder="2-story, 8/12 pitch, HOA approval pending…" />
+          <textarea rows={3} value={customer.notes} onChange={e=>set('notes',e.target.value)} placeholder="Auto-template based on roof type — edit as needed" />
         </div>
       </div>
+    </div>
+  )
+}
+
+// Rep selection — dropdown of saved reps with "+ Add new" fallback to free-text.
+function RepField({ reps, value, onChange }) {
+  const [adding, setAdding] = useState(false)
+  const hasRoster = Array.isArray(reps) && reps.length > 0
+  if (!hasRoster || adding) {
+    return (
+      <div className="field">
+        <label>Sales Rep *{hasRoster && <button type="button" className="rep-link" onClick={() => setAdding(false)}>· cancel</button>}</label>
+        <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder="Carlos M." />
+      </div>
+    )
+  }
+  return (
+    <div className="field">
+      <label>Sales Rep *</label>
+      <select value={value} onChange={e => {
+        const v = e.target.value
+        if (v === '__add__') { setAdding(true); onChange('') } else { onChange(v) }
+      }}>
+        <option value="">— select a rep —</option>
+        {reps.map(r => <option key={r.name || r} value={r.name || r}>{r.name || r}</option>)}
+        <option value="__add__">+ Add new rep…</option>
+      </select>
     </div>
   )
 }
@@ -824,6 +899,25 @@ function SettingsTab({ initial }) {
           ))}
         </SettingSection>
 
+        <SettingSection title="👤 Sales Rep Roster">
+          <div className="setting-row" style={{flexDirection:'column',alignItems:'stretch',background:'transparent',padding:0,gap:8}}>
+            {(settings.reps || []).map((r, i) => (
+              <div key={i} className="rep-row">
+                <input type="text" value={r.name || ''} onChange={e => {
+                  const next = [...(settings.reps || [])]
+                  next[i] = { ...next[i], name: e.target.value }
+                  set('reps', next)
+                }} placeholder="Rep name" />
+                <button type="button" className="btn btn-back btn-sm" onClick={() => {
+                  const next = (settings.reps || []).filter((_, j) => j !== i)
+                  set('reps', next)
+                }}>×</button>
+              </div>
+            ))}
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => set('reps', [...(settings.reps || []), { name: '' }])}>+ Add Rep</button>
+          </div>
+        </SettingSection>
+
         <SettingSection title="💳 Financing (shown on /p/[id])">
           <div className="setting-row">
             <div className="setting-label">Show financing widget</div>
@@ -865,7 +959,7 @@ function Field({ label, value, onChange, placeholder, full, type='text' }) {
 
 // Address autocomplete via OpenStreetMap Nominatim (free, no key).
 // Swap baseUrl + parsing later if upgrading to Google Places.
-function AddressAutocomplete({ label, value, onChange, placeholder, full }) {
+function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full }) {
   const [open, setOpen] = useState(false)
   const [results, setResults] = useState([])
   const [hover, setHover] = useState(-1)
@@ -883,7 +977,17 @@ function AddressAutocomplete({ label, value, onChange, placeholder, full }) {
       .then(r => r.json())
       .then(data => {
         const formatted = (data || [])
-          .map(d => ({ label: d.display_name, compact: formatAddress(d.address) }))
+          .map(d => ({
+            label: d.display_name,
+            compact: formatAddress(d.address),
+            structured: {
+              city:  d.address?.city || d.address?.town || d.address?.village || d.address?.hamlet || d.address?.suburb || '',
+              state: d.address?.state || '',
+              zip:   d.address?.postcode || '',
+              lat:   d.lat ? Number(d.lat) : null,
+              lng:   d.lon ? Number(d.lon) : null,
+            },
+          }))
           .filter(r => r.compact)
         setResults(formatted)
         setOpen(formatted.length > 0)
@@ -899,8 +1003,9 @@ function AddressAutocomplete({ label, value, onChange, placeholder, full }) {
     debRef.current = setTimeout(() => fetchSuggestions(v), 350)
   }
 
-  function pick(addr) {
-    onChange(addr)
+  function pick(item) {
+    onChange(item.compact)
+    if (onPick && item.structured) onPick(item.structured)
     setOpen(false); setResults([]); setHover(-1)
     inputRef.current?.blur()
   }
@@ -918,7 +1023,7 @@ function AddressAutocomplete({ label, value, onChange, placeholder, full }) {
         onKeyDown={e => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setHover(h => Math.min(h + 1, results.length - 1)); setOpen(true) }
           else if (e.key === 'ArrowUp') { e.preventDefault(); setHover(h => Math.max(h - 1, 0)) }
-          else if (e.key === 'Enter' && open && hover >= 0) { e.preventDefault(); pick(results[hover].compact) }
+          else if (e.key === 'Enter' && open && hover >= 0) { e.preventDefault(); pick(results[hover]) }
           else if (e.key === 'Escape') { setOpen(false) }
         }}
         placeholder={placeholder}
@@ -935,7 +1040,7 @@ function AddressAutocomplete({ label, value, onChange, placeholder, full }) {
               aria-selected={i === hover}
               className={i === hover ? 'on' : ''}
               onMouseEnter={() => setHover(i)}
-              onMouseDown={e => { e.preventDefault(); pick(r.compact) }}
+              onMouseDown={e => { e.preventDefault(); pick(r) }}
             >
               <span className="addr-pin">📍</span>
               <span>{r.compact}</span>
@@ -1021,6 +1126,14 @@ function GlobalCSS() {
       .addr-dropdown li:last-child{border-bottom:none}
       .addr-dropdown li.on,.addr-dropdown li:hover{background:rgba(176,30,23,.05)}
       .addr-pin{flex-shrink:0;font-size:14px}
+      .addr-derived{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:9px;font-size:12px}
+      .addr-derived-lbl{color:#065F46;font-weight:800;letter-spacing:.5px;text-transform:uppercase;font-size:10px;margin-right:2px}
+      .addr-pill{display:inline-block;padding:3px 9px;background:#fff;border:1px solid #A7F3D0;border-radius:20px;font-weight:700;color:#065F46;font-size:11px}
+      .rep-link{background:none;border:none;color:var(--mute);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;margin-left:4px}
+      .rep-link:hover{color:var(--crimson)}
+      .rep-row{display:flex;gap:8px;align-items:center}
+      .rep-row input{flex:1;padding:9px 12px;border:2px solid var(--bord);border-radius:7px;font-size:13px;font-family:inherit;font-weight:600;outline:none;background:#fff}
+      .rep-row input:focus{border-color:var(--crimson)}
       .webhook-banner{background:linear-gradient(135deg,var(--navy),var(--navy2));border-radius:12px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:12px}
       .wb-dot{width:11px;height:11px;border-radius:50%;background:var(--success);box-shadow:0 0 12px var(--success);flex-shrink:0;animation:pulse 2s infinite}
       @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
