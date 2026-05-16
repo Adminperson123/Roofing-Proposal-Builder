@@ -1180,11 +1180,11 @@ function GlobalCSS() {
         .nav{padding:11px 14px;flex-wrap:wrap}
         .brand-name{font-size:13px}
         .brand-sub{display:none}
-        .prog{padding:14px 16px}
-        .prog-circle{width:28px;height:28px;font-size:11px}
+        .prog{padding:12px 8px}
+        .prog-circle{width:24px;height:24px;font-size:10px}
         .prog-label{font-size:10px;letter-spacing:0}
-        .prog-step{gap:5px}
-        .prog-line{margin:0 2px}
+        .prog-step{gap:3px}
+        .prog-line{margin:0 2px;min-width:3px}
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}
         .addon-grid{grid-template-columns:1fr}
@@ -1207,6 +1207,11 @@ function GlobalCSS() {
         .step-title{font-size:20px}
       }
       @media(max-width:480px){
+        .prog-label{display:none}
+        .prog-step{gap:0}
+        .prog-circle{width:26px;height:26px;font-size:11px}
+        .prog{padding:14px 16px}
+        .prog-line{margin:0 6px}
         .scope-grid{grid-template-columns:1fr;gap:10px}
         .scope-box{padding:14px 16px}
         .scope-box-label{font-size:11px;margin-bottom:10px}
