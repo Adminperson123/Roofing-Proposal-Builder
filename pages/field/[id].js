@@ -2,9 +2,22 @@ import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
 
+function getIdFromUrl() {
+  if (typeof window === 'undefined') return null
+  const m = window.location.pathname.match(/\/field\/([^\/?#]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+function getTokenFromUrl() {
+  if (typeof window === 'undefined') return null
+  const u = new URLSearchParams(window.location.search)
+  return u.get('t')
+}
+
 export default function FieldUpload() {
   const router = useRouter()
-  const { id, t } = router.query
+  // URL fallbacks for statically-optimized dynamic routes (router.query empty pre-isReady).
+  const id = router.query.id || getIdFromUrl()
+  const t  = router.query.t  || getTokenFromUrl()
   const [proposal, setProposal] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)

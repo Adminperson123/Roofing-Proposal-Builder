@@ -989,7 +989,7 @@ function GlobalCSS() {
       .tab{padding:14px 22px;font-size:13px;font-weight:800;color:rgba(255,255,255,.5);background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;letter-spacing:.5px;transition:all .15s;white-space:nowrap;flex-shrink:0}
       .tab.on{color:#fff;border-bottom-color:var(--crimson)}
       .tab:hover:not(.on){color:rgba(255,255,255,.8)}
-      .prog{background:rgba(0,0,0,.18);padding:16px 22px}
+      .prog{background:rgba(0,0,0,.18);padding:16px 22px;overflow:hidden}
       .prog-inner{max-width:780px;margin:0 auto;display:flex;align-items:center}
       .prog-step{display:flex;align-items:center;flex:1;gap:8px;min-width:0}
       .prog-step:last-child{flex:0}
@@ -1180,6 +1180,11 @@ function GlobalCSS() {
         .nav{padding:11px 14px;flex-wrap:wrap}
         .brand-name{font-size:13px}
         .brand-sub{display:none}
+        .prog{padding:14px 16px}
+        .prog-circle{width:28px;height:28px;font-size:11px}
+        .prog-label{font-size:10px;letter-spacing:0}
+        .prog-step{gap:5px}
+        .prog-line{margin:0 2px}
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}
         .addon-grid{grid-template-columns:1fr}

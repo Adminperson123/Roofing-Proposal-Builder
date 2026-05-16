@@ -50,9 +50,17 @@ const NOT_INCLUDED = [
   'Permit fees that exceed the listed amount (rare; covered transparently)',
 ]
 
+function getIdFromUrl() {
+  if (typeof window === 'undefined') return null
+  const m = window.location.pathname.match(/\/p\/([^\/?#]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
 export default function PublicProposal() {
   const router = useRouter()
-  const { id } = router.query
+  // URL fallback prevents the page from being stuck when router.query is empty
+  // (statically-optimized dynamic routes don't populate query until isReady).
+  const id = router.query.id || getIdFromUrl()
   const [p, setP] = useState(null)
   const [err, setErr] = useState('')
   const [picking, setPicking] = useState(null)
