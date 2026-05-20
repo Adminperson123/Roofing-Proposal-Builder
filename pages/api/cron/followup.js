@@ -18,8 +18,12 @@
  * Security: Vercel cron requests carry `Authorization: Bearer <CRON_SECRET>`.
  * We reject anything that doesn't match.
  *
- * You can also trigger manually for testing:
- *   curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>/api/cron/followup
+ * TESTING SAFELY — use dry-run mode. This returns the candidates that WOULD be
+ * texted but does NOT actually send SMS or stamp the database:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-app>/api/cron/followup?dry_run=true"
+ *
+ * Live run (be careful — sends real SMS to real customers):
+ *   curl -H "Authorization: Bearer $CRON_SECRET" "https://<your-app>/api/cron/followup"
  */
 
 import { serverClient } from '../../../lib/supabase'
@@ -41,6 +45,12 @@ export default async function handler(req, res) {
   if (provided !== expected) {
     return res.status(401).json({ error: 'unauthorized' })
   }
+
+  // Dry-run mode — caller can preview what the cron WOULD do without firing real SMS.
+  // Accepts ?dry_run=true (or "1") in the query string.
+  const dryRun =
+    String(req.query?.dry_run || '').toLowerCase() === 'true' ||
+    String(req.query?.dry_run || '') === '1'
 
   const sb = serverClient()
   const now = Date.now()
@@ -78,6 +88,21 @@ export default async function handler(req, res) {
       `Hi ${firstName}, just checking in — did you get a chance to look over your roofing proposal? ` +
       `Happy to answer any questions or walk through the options together. ${link}`.trim()
 
+    // ===== DRY RUN BRANCH =====
+    // Report what we'd do without actually sending or stamping the database.
+    if (dryRun) {
+      results.push({
+        id: p.id,
+        prop_num: p.prop_num,
+        ok: true,
+        wouldSendTo: p.customer_name,
+        wouldUseContactId: p.ghl_contact_id || '(would upsert from phone ' + p.customer_phone + ')',
+        wouldSendMessage: message,
+      })
+      continue
+    }
+    // ===== LIVE BRANCH =====
+
     const smsResult = await ensureContactAndSendSms({
       contactId: p.ghl_contact_id || null,
       phone: p.customer_phone,
@@ -101,9 +126,11 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
+    dryRun, // surface this loud and clear in the response
     window: { from: windowStart, to: windowEnd, hours: [FOLLOWUP_AFTER_HOURS, FOLLOWUP_BEFORE_HOURS] },
     candidates: candidates?.length || 0,
-    sent: results.filter(r => r.ok).length,
+    sent: dryRun ? 0 : results.filter(r => r.ok).length,
+    wouldSend: dryRun ? results.filter(r => r.ok).length : undefined,
     failed: results.filter(r => !r.ok && !r.skipped).length,
     skipped: results.filter(r => r.skipped).length,
     results,
