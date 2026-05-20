@@ -1,7 +1,7 @@
 /**
  * POST /api/proposal/[id]/analyze
  *
- * Runs Claude Vision against the proposal's uploaded photos and stores the
+ * Runs OpenAI Vision against the proposal's uploaded photos and stores the
  * structured analysis in the vision_analysis jsonb column.
  *
  * Request body (optional): { force?: true }

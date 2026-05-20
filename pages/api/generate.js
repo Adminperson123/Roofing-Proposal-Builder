@@ -1,5 +1,5 @@
 import { serverClient } from '../../lib/supabase'
-import { generateTiers } from '../../lib/anthropic'
+import { generateTiers } from '../../lib/openai'
 import { calcPrices, newPropNum } from '../../lib/pricing'
 import { ensureContactAndSendSms } from '../../lib/ghl'
 
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     const prices = calcPrices(scope, settings)
-    const tiers  = await generateTiers({ customer, scope, prices })
+    const { tiers, coverLetter } = await generateTiers({ customer, scope, prices })
     const propNum = newPropNum()
 
     const sb = serverClient()
@@ -41,6 +41,7 @@ export default async function handler(req, res) {
         permit_amount: scope.permit || 0,
         addons: scope.addons || [],
         tiers,
+        cover_letter: coverLetter || null,
       })
       .select('id, prop_num')
       .single()
