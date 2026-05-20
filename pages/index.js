@@ -164,6 +164,7 @@ export default function Home() {
       <div className="tabs">
         <button className={`tab ${tab==='builder'?'on':''}`}   onClick={() => setTab('builder')}>📋 Build</button>
         <button className={`tab ${tab==='proposals'?'on':''}`} onClick={() => setTab('proposals')}>📁 Proposals</button>
+        <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>📊 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}  onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>
 
@@ -183,6 +184,7 @@ export default function Home() {
         )
       )}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onOpen={setOpenProposal} />}
+      {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && settings && <SettingsTab initial={settings} />}
 
       {openProposal && (
@@ -1140,6 +1142,101 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   )
 }
 
+/* ─────────────── TEAM / REPS TAB ─────────────── */
+function RepsTab() {
+  const [range, setRange]     = useState('all')   // 30d | 90d | all
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+
+  async function load(win) {
+    setLoading(true); setError('')
+    try {
+      const r = await fetch(`/api/reps?window=${win}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Failed to load')
+      setData(d)
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load(range) }, [range])
+
+  const reps   = data?.reps || []
+  const totals = data?.totals || { sent: 0, viewed: 0, accepted: 0, revenue: 0, acceptRate: 0 }
+
+  return (
+    <main className="main">
+      <div className="card">
+        <div className="proposals-head">
+          <div><h2 className="step-title">TEAM PERFORMANCE</h2><p className="step-sub">Per-rep proposal stats — ranked by deals closed.</p></div>
+          <div className="win-toggle">
+            {[['30d','30 Days'],['90d','90 Days'],['all','All-Time']].map(([v, lbl]) => (
+              <button key={v} className={`win-btn ${range===v?'on':''}`} onClick={() => setRange(v)}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+
+        {error && <div className="error-banner">⚠️ {error}</div>}
+
+        {loading ? (
+          <div className="empty"><div className="empty-icon">⏳</div>Loading…</div>
+        ) : (
+          <>
+            <div className="kpi-row">
+              <KpiCard label="Proposals Sent"  value={totals.sent} />
+              <KpiCard label="Deals Closed"    value={totals.accepted} accent />
+              <KpiCard label="Accept Rate"     value={repPct(totals.acceptRate)} />
+              <KpiCard label="Revenue Closed"  value={repMoney(totals.revenue)} accent />
+            </div>
+
+            {!reps.length ? (
+              <div className="empty"><div className="empty-icon">📊</div><strong>No data for this window</strong><div>Proposals created in range will show up here</div></div>
+            ) : (
+              <table className="ptable">
+                <thead><tr>
+                  <th>#</th><th>Rep</th><th>Sent</th><th>Viewed</th><th>Closed</th>
+                  <th>Accept&nbsp;%</th><th>Avg&nbsp;Ticket</th><th>Avg&nbsp;Close&nbsp;Time</th><th>Revenue</th>
+                </tr></thead>
+                <tbody>
+                  {reps.map((r, i) => (
+                    <tr key={r.rep_name}>
+                      <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
+                      <td className="ptable-name">{r.rep_name}</td>
+                      <td>{r.sent}</td>
+                      <td>{r.viewed}</td>
+                      <td><strong>{r.accepted}</strong></td>
+                      <td>{repPct(r.acceptRate)}</td>
+                      <td>{r.avgTicket ? repMoney(r.avgTicket) : '—'}</td>
+                      <td>{repDuration(r.avgHoursToAccept)}</td>
+                      <td><strong>{repMoney(r.revenue)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function KpiCard({ label, value, accent }) {
+  return (
+    <div className={`kpi ${accent ? 'accent' : ''}`}>
+      <div className="kpi-val">{value}</div>
+      <div className="kpi-lbl">{label}</div>
+    </div>
+  )
+}
+function repPct(n)   { return Math.round((n || 0) * 100) + '%' }
+function repMoney(n) { return '$' + (n || 0).toLocaleString() }
+function repDuration(hours) {
+  if (hours == null) return '—'
+  if (hours < 48) return hours + 'h'
+  return (hours / 24).toFixed(1) + 'd'
+}
+
 function GlobalCSS() {
   return (
     <style jsx global>{`
@@ -1418,7 +1515,22 @@ function GlobalCSS() {
         .addon-name{font-size:14px}
         .card{padding:20px 16px}
         .main{padding:14px 10px 40px}
+        .kpi-row{grid-template-columns:1fr 1fr}
       }
+      /* ── Team / Reps dashboard ── */
+      .win-toggle{display:flex;gap:4px;background:#F7F6F3;padding:4px;border-radius:9px;border:2px solid #E2E0DB}
+      .win-btn{padding:7px 14px;font-size:12px;font-weight:800;border:none;background:none;border-radius:6px;cursor:pointer;font-family:inherit;color:#4A5568;transition:all .15s}
+      .win-btn:hover:not(.on){color:#B01E17}
+      .win-btn.on{background:#B01E17;color:#fff}
+      .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+      .kpi{background:#F7F6F3;border:2px solid #E2E0DB;border-radius:12px;padding:18px 20px}
+      .kpi.accent{background:#0C1C38;border-color:#0C1C38}
+      .kpi-val{font-size:26px;font-weight:900;color:#0C1C38;line-height:1.1}
+      .kpi.accent .kpi-val{color:#F0B429}
+      .kpi-lbl{font-size:11px;font-weight:800;color:#4A5568;letter-spacing:.8px;text-transform:uppercase;margin-top:4px}
+      .kpi.accent .kpi-lbl{color:rgba(255,255,255,.55)}
+      .rank{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#F7F6F3;border:2px solid #E2E0DB;font-weight:900;font-size:11px;color:#4A5568}
+      .rank.gold{background:#D4960E;border-color:#D4960E;color:#fff}
     `}</style>
   )
 }

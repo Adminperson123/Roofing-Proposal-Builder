@@ -2,6 +2,7 @@ import { serverClient } from '../../lib/supabase'
 import { generateTiers } from '../../lib/openai'
 import { calcPrices, newPropNum, DEFAULT_SETTINGS } from '../../lib/pricing'
 import { requireAuth } from '../../lib/auth'
+import { ensureContactAndSendSms } from '../../lib/ghl'
 
 export const config = { maxDuration: 60 }
 
@@ -64,10 +65,46 @@ async function handler(req, res) {
     const base = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`
     const shareUrl = `${base.replace(/\/$/, '')}/p/${data.id}`
 
-    res.status(200).json({ id: data.id, propNum: data.prop_num, shareUrl, tiers, prices, coverLetter })
+    // Auto-text the proposal link to the customer (best-effort — never blocks the response).
+    const sms = await maybeSendProposalSms({ customer, shareUrl, propNum: data.prop_num, proposalId: data.id, sb })
+
+    res.status(200).json({ id: data.id, propNum: data.prop_num, shareUrl, tiers, prices, coverLetter, sms })
   } catch (err) {
     console.error('generate error:', err)
     res.status(500).json({ error: 'Failed to generate proposal. Please try again.' })
+  }
+}
+
+/**
+ * Text the customer their proposal link. Always returns a result object; never throws.
+ * The proposal is already saved by the time this runs — an SMS failure must not undo it.
+ */
+async function maybeSendProposalSms({ customer, shareUrl, propNum, proposalId, sb }) {
+  if (!customer?.phone && !customer?.ghlId) {
+    return { ok: false, skipped: true, reason: 'no phone or ghl_contact_id' }
+  }
+  const firstName = (customer.name || '').split(/\s+/)[0] || 'there'
+  const message =
+    `Hi ${firstName}, this is Good People Roofing. Your proposal #${propNum} is ready to view: ${shareUrl}\n\n` +
+    `It includes three options (Good / Better / Best) you can pick from. Reply to this text with any questions.`
+  try {
+    const result = await ensureContactAndSendSms({
+      contactId: customer.ghlId || null,
+      phone: customer.phone, name: customer.name, email: customer.email, message,
+    })
+    const updates = { sent_at: new Date().toISOString() }
+    if (result.ok) {
+      updates.sent_channels = ['sms']
+      if (result.contactId && result.contactId !== customer.ghlId) updates.ghl_contact_id = result.contactId
+    } else {
+      updates.sent_channels = []
+    }
+    await sb.from('proposals').update(updates).eq('id', proposalId)
+    if (!result.ok) { console.error('SMS to customer failed:', result.error); return { ok: false, error: result.error } }
+    return { ok: true, contactId: result.contactId }
+  } catch (err) {
+    console.error('SMS helper threw unexpectedly:', err)
+    return { ok: false, error: err.message || String(err) }
   }
 }
 
