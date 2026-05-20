@@ -1,7 +1,12 @@
 /**
  * Scheduled 48-hour follow-up SMS.
  *
- * Runs hourly via Vercel Cron (config in /vercel.json). Finds proposals that:
+ * Runs DAILY via Vercel Cron (config in /vercel.json) at 01:00 UTC (~6pm Pacific previous day).
+ * Why daily and not hourly? Vercel Hobby plan limits cron to once per day; upgrading to
+ * Pro ($20/mo) unlocks unlimited schedules — then change vercel.json to "0 * * * *"
+ * and tighten the window below to 48-72 hours.
+ *
+ * Finds proposals that:
  *   - Are in status "viewed"  (the customer DID open it but never accepted)
  *   - Were viewed 48-72 hours ago  (sweet spot for nudges)
  *   - Have NOT been followed-up yet  (followup_sent_at IS NULL)
@@ -20,9 +25,11 @@
 import { serverClient } from '../../../lib/supabase'
 import { ensureContactAndSendSms } from '../../../lib/ghl'
 
-// Tunables — change here if 48h doesn't feel right.
-const FOLLOWUP_AFTER_HOURS = 48
-const FOLLOWUP_BEFORE_HOURS = 72
+// Tunables — change here if the window doesn't feel right.
+// We sweep a wide window (36-96 hours) because the cron runs DAILY on Vercel Hobby.
+// On Pro you can switch to hourly and tighten this back to 48-72 hours.
+const FOLLOWUP_AFTER_HOURS = 36
+const FOLLOWUP_BEFORE_HOURS = 96
 
 export default async function handler(req, res) {
   // 1. Auth check — only Vercel Cron (or a curl with the secret) may run this.
