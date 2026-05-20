@@ -103,6 +103,7 @@ export default function Home() {
       <div className="tabs">
         <button className={`tab ${tab==='builder'?'on':''}`}    onClick={() => setTab('builder')}>📋 Build Proposal</button>
         <button className={`tab ${tab==='proposals'?'on':''}`}  onClick={() => setTab('proposals')}>📁 All Proposals</button>
+        <button className={`tab ${tab==='reps'?'on':''}`}       onClick={() => setTab('reps')}>📊 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}   onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>
 
@@ -122,6 +123,7 @@ export default function Home() {
         )
       )}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} />}
+      {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && <SettingsTab settings={settings} onChange={persistSettings} />}
 
       <GlobalCSS />
@@ -629,6 +631,101 @@ function TierPill({ tier, tiers }) {
   return <span className="tier-pill" style={{background:c}}>{name}</span>
 }
 
+/* ─────────────── TEAM / REPS TAB ─────────────── */
+function RepsTab() {
+  const [range, setRange]     = useState('all')   // 30d | 90d | all
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+
+  async function load(win) {
+    setLoading(true); setError('')
+    try {
+      const r = await fetch(`/api/reps?window=${win}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Failed to load')
+      setData(d)
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load(range) }, [range])
+
+  const reps   = data?.reps || []
+  const totals = data?.totals || { sent: 0, viewed: 0, accepted: 0, revenue: 0, acceptRate: 0 }
+
+  return (
+    <main className="main">
+      <div className="card">
+        <div className="proposals-head">
+          <div><h2 className="step-title">TEAM PERFORMANCE</h2><p className="step-sub">Per-rep proposal stats — ranked by deals closed.</p></div>
+          <div className="win-toggle">
+            {[['30d','30 Days'],['90d','90 Days'],['all','All-Time']].map(([v, lbl]) => (
+              <button key={v} className={`win-btn ${range===v?'on':''}`} onClick={() => setRange(v)}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+
+        {error && <div className="error-banner">⚠️ {error}</div>}
+
+        {loading ? (
+          <div className="empty"><div className="empty-icon">⏳</div>Loading…</div>
+        ) : (
+          <>
+            <div className="kpi-row">
+              <KpiCard label="Proposals Sent"  value={totals.sent} />
+              <KpiCard label="Deals Closed"    value={totals.accepted} accent />
+              <KpiCard label="Accept Rate"     value={pct(totals.acceptRate)} />
+              <KpiCard label="Revenue Closed"  value={money(totals.revenue)} accent />
+            </div>
+
+            {!reps.length ? (
+              <div className="empty"><div className="empty-icon">📊</div><strong>No data for this window</strong><div>Proposals created in range will show up here</div></div>
+            ) : (
+              <table className="ptable">
+                <thead><tr>
+                  <th>#</th><th>Rep</th><th>Sent</th><th>Viewed</th><th>Closed</th>
+                  <th>Accept&nbsp;%</th><th>Avg&nbsp;Ticket</th><th>Avg&nbsp;Close&nbsp;Time</th><th>Revenue</th>
+                </tr></thead>
+                <tbody>
+                  {reps.map((r, i) => (
+                    <tr key={r.rep_name}>
+                      <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
+                      <td className="ptable-name">{r.rep_name}</td>
+                      <td>{r.sent}</td>
+                      <td>{r.viewed}</td>
+                      <td><strong>{r.accepted}</strong></td>
+                      <td>{pct(r.acceptRate)}</td>
+                      <td>{r.avgTicket ? money(r.avgTicket) : '—'}</td>
+                      <td>{fmtDuration(r.avgHoursToAccept)}</td>
+                      <td><strong>{money(r.revenue)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function KpiCard({ label, value, accent }) {
+  return (
+    <div className={`kpi ${accent ? 'accent' : ''}`}>
+      <div className="kpi-val">{value}</div>
+      <div className="kpi-lbl">{label}</div>
+    </div>
+  )
+}
+function pct(n)   { return Math.round((n || 0) * 100) + '%' }
+function money(n) { return '$' + (n || 0).toLocaleString() }
+function fmtDuration(hours) {
+  if (hours == null) return '—'
+  if (hours < 48) return hours + 'h'
+  return (hours / 24).toFixed(1) + 'd'
+}
+
 /* ─────────────── SETTINGS TAB ─────────────── */
 function SettingsTab({ settings, onChange }) {
   const set = (path, val) => {
@@ -883,6 +980,20 @@ function GlobalCSS() {
       .addon-chip.active{background:rgba(16,185,129,.12);border-color:var(--success);color:#065F46}
       .analysis-hint{padding:13px 18px;background:#FFFBEB;border-top:1px solid #FCD34D;font-size:12px;color:#78350F;line-height:1.6}
       .link-btn{background:none;border:none;color:var(--crimson);font-weight:800;font-family:inherit;font-size:12px;cursor:pointer;padding:0;text-decoration:underline}
+      /* ── Team / Reps dashboard ── */
+      .win-toggle{display:flex;gap:4px;background:var(--cream);padding:4px;border-radius:9px;border:2px solid var(--bord)}
+      .win-btn{padding:7px 14px;font-size:12px;font-weight:800;border:none;background:none;border-radius:6px;cursor:pointer;font-family:inherit;color:var(--mute);transition:all .15s}
+      .win-btn:hover:not(.on){color:var(--crimson)}
+      .win-btn.on{background:var(--crimson);color:#fff}
+      .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+      .kpi{background:var(--cream);border:2px solid var(--bord);border-radius:12px;padding:18px 20px}
+      .kpi.accent{background:var(--navy);border-color:var(--navy)}
+      .kpi-val{font-size:26px;font-weight:900;color:var(--navy);line-height:1.1}
+      .kpi.accent .kpi-val{color:var(--gold-l)}
+      .kpi-lbl{font-size:11px;font-weight:800;color:var(--mute);letter-spacing:.8px;text-transform:uppercase;margin-top:4px}
+      .kpi.accent .kpi-lbl{color:rgba(255,255,255,.55)}
+      .rank{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--cream);border:2px solid var(--bord);font-weight:900;font-size:11px;color:var(--mute)}
+      .rank.gold{background:var(--gold);border-color:var(--gold);color:#fff}
       @media(max-width:780px){
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}
