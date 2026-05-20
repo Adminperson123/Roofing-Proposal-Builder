@@ -158,6 +158,25 @@ export default function PublicProposal() {
                 </div>
               </section>
 
+              {p.financing_enabled && (
+                <section className="pub-financing">
+                  <div className="pub-fin-icon">💳</div>
+                  <div className="pub-fin-body">
+                    <h3>Financing Available</h3>
+                    <p>Don't let budget stand between you and a roof you can trust. Spread the cost into manageable monthly payments — most homeowners qualify in minutes.</p>
+                    {p.financing?.applyUrl ? (
+                      <a className="pub-fin-btn" href={p.financing.applyUrl} target="_blank" rel="noreferrer">
+                        Apply for Financing{p.financing.partnerName ? ` with ${p.financing.partnerName}` : ''} →
+                      </a>
+                    ) : (
+                      <div className="pub-fin-ask">
+                        Ask {p.rep_name || 'your rep'} about flexible monthly payment options.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
               <section className="pub-terms">
                 <h3>Terms</h3>
                 <p>This proposal is valid for 14 days. Deposit: $1,000 or 10% (whichever is less) due upon signing · 50% at start · balance upon completion. Wood repairs, extra layers, and permit costs added via signed Change Order. CA Lic. C39 #1126880. Fully licensed and insured.</p>
@@ -246,6 +265,13 @@ export default function PublicProposal() {
         .pub-tier-feats li span{font-weight:900;flex-shrink:0}
         .pub-tier-cta{color:#fff;border:none;border-radius:10px;padding:13px 18px;font-size:14px;font-weight:800;letter-spacing:.5px;cursor:pointer;font-family:inherit;transition:filter .15s}
         .pub-tier-cta:hover{filter:brightness(1.1)}
+        .pub-financing{display:flex;gap:18px;align-items:flex-start;background:linear-gradient(135deg,var(--navy),#16305E);border-radius:14px;padding:24px 28px;margin-bottom:24px}
+        .pub-fin-icon{font-size:34px;flex-shrink:0;line-height:1}
+        .pub-fin-body h3{color:var(--gold);font-size:17px;font-weight:900;letter-spacing:.5px;margin-bottom:6px}
+        .pub-fin-body p{color:rgba(255,255,255,.78);font-size:13px;line-height:1.6;margin-bottom:14px;max-width:560px}
+        .pub-fin-btn{display:inline-block;background:var(--gold);color:var(--navy);font-weight:900;font-size:14px;padding:12px 22px;border-radius:9px;text-decoration:none;letter-spacing:.3px}
+        .pub-fin-btn:hover{background:#F0B429}
+        .pub-fin-ask{color:#fff;font-size:13px;font-weight:700;background:rgba(255,255,255,.1);border-radius:8px;padding:11px 15px;display:inline-block}
         .pub-terms{margin-top:24px;padding:18px 22px;background:#fff;border-radius:12px;border:1px solid var(--bord)}
         .pub-terms h3{font-size:13px;font-weight:800;color:var(--navy);margin-bottom:8px;letter-spacing:1px}
         .pub-terms p{font-size:11.5px;color:var(--mute);line-height:1.6}

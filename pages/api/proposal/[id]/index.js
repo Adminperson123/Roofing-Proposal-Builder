@@ -22,6 +22,15 @@ export default async function handler(req, res) {
         console.error('rep notification threw unexpectedly:', err)
       })
     }
+
+    // Attach financing partner config (env-driven). Kept server-side so we don't
+    // need NEXT_PUBLIC_ vars. Both fields are null until Oscar sets the real partner;
+    // the public page degrades gracefully when applyUrl is missing.
+    data.financing = {
+      partnerName: process.env.FINANCING_PARTNER_NAME || null,
+      applyUrl:    process.env.FINANCING_PARTNER_URL || null,
+    }
+
     return res.status(200).json(data)
   }
 

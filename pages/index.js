@@ -34,6 +34,7 @@ export default function Home() {
   const [genError, setGenError] = useState('')
   const [photos, setPhotos]     = useState([])    // array of downscaled data URLs
   const [analysis, setAnalysis] = useState(null)  // OpenAI Vision result, or null
+  const [financingEnabled, setFinancingEnabled] = useState(false)
 
   // Hydrate settings from localStorage (rep-local pricing)
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function Home() {
 
   function reset() {
     setStep(0); setCustomer(blankCustomer); setScope(blankScope); setResult(null); setGenError('')
-    setPhotos([]); setAnalysis(null)
+    setPhotos([]); setAnalysis(null); setFinancingEnabled(false)
   }
 
   async function generate() {
@@ -76,7 +77,7 @@ export default function Home() {
     try {
       const r = await fetch('/api/generate', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ customer, scope, settings, photos, visionAnalysis: analysis }),
+        body: JSON.stringify({ customer, scope, settings, photos, visionAnalysis: analysis, financingEnabled }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Generation failed')
@@ -117,6 +118,7 @@ export default function Home() {
             scope={scope} setScope={setScope}
             photos={photos} setPhotos={setPhotos}
             analysis={analysis} setAnalysis={setAnalysis}
+            financingEnabled={financingEnabled} setFinancingEnabled={setFinancingEnabled}
             generating={generating} genError={genError}
             onGenerate={generate}
           />
@@ -132,7 +134,7 @@ export default function Home() {
 }
 
 /* ─────────────── BUILDER ─────────────── */
-function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, analysis, setAnalysis, generating, genError, onGenerate }) {
+function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, analysis, setAnalysis, financingEnabled, setFinancingEnabled, generating, genError, onGenerate }) {
   const LABELS = ['Customer', 'Roof & Scope', 'Photos & AI', 'Review & Generate']
   const LAST = LABELS.length - 1
   // Step 2 (Photos) is optional — the rep can always advance.
@@ -159,7 +161,7 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
           {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
           {step === 2 && <StepPhotos   photos={photos} setPhotos={setPhotos} analysis={analysis} setAnalysis={setAnalysis} customer={customer} scope={scope} onBackToScope={() => setStep(1)} />}
-          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} analysis={analysis} onGenerate={onGenerate} generating={generating} genError={genError} />}
+          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} analysis={analysis} financingEnabled={financingEnabled} setFinancingEnabled={setFinancingEnabled} onGenerate={onGenerate} generating={generating} genError={genError} />}
 
           <div className="step-nav">
             <button className="btn btn-back" disabled={step === 0} onClick={() => setStep(step - 1)}>← Back</button>
@@ -457,7 +459,7 @@ function StepPhotos({ photos, setPhotos, analysis, setAnalysis, customer, scope,
   )
 }
 
-function StepReview({ customer, scope, photos, analysis, onGenerate, generating, genError }) {
+function StepReview({ customer, scope, photos, analysis, financingEnabled, setFinancingEnabled, onGenerate, generating, genError }) {
   return (
     <div>
       <h2 className="step-title">REVIEW & GENERATE</h2>
@@ -499,6 +501,19 @@ function StepReview({ customer, scope, photos, analysis, onGenerate, generating,
           {analysis
             ? `AI analysis ran (condition ${analysis.condition_score ?? '?'}/10)`
             : 'AI analysis not run'}
+        </div>
+      </div>
+
+      <div
+        className={`financing-toggle ${financingEnabled ? 'on' : ''}`}
+        onClick={() => setFinancingEnabled(!financingEnabled)}
+        role="checkbox"
+        aria-checked={financingEnabled}
+      >
+        <div className={`fin-chk ${financingEnabled ? 'on' : ''}`}>{financingEnabled && '✓'}</div>
+        <div className="fin-text">
+          <div className="fin-title">💳 Offer financing on this proposal</div>
+          <div className="fin-sub">Adds a "Financing Available" section to the customer's proposal so they can spread the cost into monthly payments.</div>
         </div>
       </div>
 
@@ -994,6 +1009,14 @@ function GlobalCSS() {
       .kpi.accent .kpi-lbl{color:rgba(255,255,255,.55)}
       .rank{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--cream);border:2px solid var(--bord);font-weight:900;font-size:11px;color:var(--mute)}
       .rank.gold{background:var(--gold);border-color:var(--gold);color:#fff}
+      /* ── Financing toggle (Review step) ── */
+      .financing-toggle{display:flex;gap:13px;align-items:flex-start;background:var(--cream);border:2px solid var(--bord);border-radius:11px;padding:15px 17px;margin-top:14px;cursor:pointer;transition:all .15s}
+      .financing-toggle:hover{border-color:var(--crimson)}
+      .financing-toggle.on{border-color:var(--success);background:rgba(16,185,129,.06)}
+      .fin-chk{width:22px;height:22px;border-radius:6px;border:2px solid var(--bord);background:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0;margin-top:1px}
+      .fin-chk.on{background:var(--success);border-color:var(--success)}
+      .fin-title{font-size:14px;font-weight:800;color:var(--navy)}
+      .fin-sub{font-size:12px;color:var(--mute);margin-top:3px;line-height:1.5}
       @media(max-width:780px){
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}

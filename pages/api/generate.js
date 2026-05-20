@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { customer, scope, settings, photos, visionAnalysis } = req.body || {}
+    const { customer, scope, settings, photos, visionAnalysis, financingEnabled } = req.body || {}
     if (!customer?.name || !scope?.roofType) {
       return res.status(400).json({ error: 'Missing customer.name or scope.roofType' })
     }
@@ -50,6 +50,7 @@ export default async function handler(req, res) {
         addons: scope.addons || [],
         tiers,
         cover_letter: coverLetter || null,
+        financing_enabled: !!financingEnabled,
       })
       .select('id, prop_num')
       .single()
