@@ -1,4 +1,5 @@
 import { serverClient } from '../../../../lib/supabase'
+import { ensureContactAndSendSms } from '../../../../lib/ghl'
 
 export default async function handler(req, res) {
   const { id } = req.query
@@ -8,11 +9,18 @@ export default async function handler(req, res) {
     const { data, error } = await sb.from('proposals').select('*').eq('id', id).single()
     if (error) return res.status(404).json({ error: 'Not found' })
 
-    // Mark first view
+    // Mark first view + notify the rep (best-effort, never block the page render)
     if (!data.viewed_at) {
-      await sb.from('proposals').update({ viewed_at: new Date().toISOString(), status: 'viewed' }).eq('id', id)
-      data.viewed_at = new Date().toISOString()
+      const now = new Date().toISOString()
+      await sb.from('proposals').update({ viewed_at: now, status: 'viewed' }).eq('id', id)
+      data.viewed_at = now
       data.status = 'viewed'
+
+      // Fire-and-forget — don't await before responding to the customer.
+      // The customer should see the proposal instantly; the rep ping happens in the background.
+      notifyRepOfView({ proposal: data }).catch(err => {
+        console.error('rep notification threw unexpectedly:', err)
+      })
     }
     return res.status(200).json(data)
   }
@@ -24,4 +32,41 @@ export default async function handler(req, res) {
   }
 
   res.status(405).json({ error: 'Method not allowed' })
+}
+
+/**
+ * Text the rep (or a shared sales number) the moment the customer opens the proposal.
+ * Uses the REP_NOTIFICATION_PHONE env var. If unset, the function quietly skips —
+ * this keeps the feature optional so GPR can enable/disable it without code changes.
+ *
+ * The rep is auto-upserted in GHL as a contact named "Sales Rep — Notifications" so
+ * we have a stable contactId to message. Re-upserts are de-duped by phone in GHL.
+ */
+async function notifyRepOfView({ proposal }) {
+  const repPhone = process.env.REP_NOTIFICATION_PHONE
+  if (!repPhone) {
+    console.log('REP_NOTIFICATION_PHONE not set — skipping rep notification')
+    return
+  }
+
+  const base = process.env.NEXT_PUBLIC_SITE_URL || ''
+  const link = base ? `${base.replace(/\/$/, '')}/p/${proposal.id}` : `/p/${proposal.id}`
+  const customer = proposal.customer_name || 'A customer'
+  const propNum = proposal.prop_num || proposal.id
+
+  const message =
+    `🔥 ${customer} just opened proposal #${propNum}. ` +
+    `Call them NOW while it's open on their screen. ${link}`
+
+  const result = await ensureContactAndSendSms({
+    phone: repPhone,
+    name: 'Sales Rep — Notifications',
+    message,
+  })
+
+  if (!result.ok) {
+    console.error('Rep notification SMS failed:', result.error)
+  } else {
+    console.log(`Rep notified of view on proposal ${propNum}`)
+  }
 }
