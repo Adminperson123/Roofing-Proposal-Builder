@@ -42,14 +42,16 @@ export default async function handler(req, res) {
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
 
-  // Group by rep
+  // Group by rep. Key on the lowercased name so "alex beltran" and "Alex Beltran"
+  // (the rep_name field is free-text and casing drifts) collapse into one rep.
   const byRep = new Map()
   for (const p of data || []) {
-    const rep = (p.rep_name || '').trim() || 'Unassigned'
-    if (!byRep.has(rep)) {
-      byRep.set(rep, { rep_name: rep, sent: 0, viewed: 0, accepted: 0, revenue: 0, _acceptHours: [] })
+    const repRaw = (p.rep_name || '').trim() || 'Unassigned'
+    const key = repRaw.toLowerCase()
+    if (!byRep.has(key)) {
+      byRep.set(key, { rep_name: titleCase(repRaw), sent: 0, viewed: 0, accepted: 0, revenue: 0, _acceptHours: [] })
     }
-    const r = byRep.get(rep)
+    const r = byRep.get(key)
     r.sent++
     if (p.viewed_at) r.viewed++
     if (p.status === 'accepted' || p.status === 'signed') {
@@ -99,6 +101,11 @@ function ticketValue(p) {
   const tier = p.tiers?.[p.selected_tier]
   if (tier?.price) return Number(tier.price) || 0
   return 0
+}
+
+/** Title-case a free-text name: "alex beltran" -> "Alex Beltran". */
+function titleCase(s) {
+  return String(s).replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
 }
 
 /** Whole hours between two timestamps, or null if either is missing/invalid. */
