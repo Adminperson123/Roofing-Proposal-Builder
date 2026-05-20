@@ -32,6 +32,8 @@ export default function Home() {
   const [generating, setGenerating] = useState(false)
   const [result, setResult]     = useState(null)  // { id, propNum, shareUrl, tiers }
   const [genError, setGenError] = useState('')
+  const [photos, setPhotos]     = useState([])    // array of downscaled data URLs
+  const [analysis, setAnalysis] = useState(null)  // OpenAI Vision result, or null
 
   // Hydrate settings from localStorage (rep-local pricing)
   useEffect(() => {
@@ -66,6 +68,7 @@ export default function Home() {
 
   function reset() {
     setStep(0); setCustomer(blankCustomer); setScope(blankScope); setResult(null); setGenError('')
+    setPhotos([]); setAnalysis(null)
   }
 
   async function generate() {
@@ -73,7 +76,7 @@ export default function Home() {
     try {
       const r = await fetch('/api/generate', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ customer, scope, settings }),
+        body: JSON.stringify({ customer, scope, settings, photos, visionAnalysis: analysis }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Generation failed')
@@ -111,6 +114,8 @@ export default function Home() {
             step={step} setStep={setStep}
             customer={customer} setCustomer={setCustomer}
             scope={scope} setScope={setScope}
+            photos={photos} setPhotos={setPhotos}
+            analysis={analysis} setAnalysis={setAnalysis}
             generating={generating} genError={genError}
             onGenerate={generate}
           />
@@ -125,9 +130,13 @@ export default function Home() {
 }
 
 /* ─────────────── BUILDER ─────────────── */
-function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, generating, genError, onGenerate }) {
-  const LABELS = ['Customer', 'Roof & Scope', 'Review & Generate']
-  const canNext = step === 0 ? customer.name && customer.phone && customer.email && customer.address && customer.rep : step === 1 ? !!scope.roofType : true
+function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, analysis, setAnalysis, generating, genError, onGenerate }) {
+  const LABELS = ['Customer', 'Roof & Scope', 'Photos & AI', 'Review & Generate']
+  const LAST = LABELS.length - 1
+  // Step 2 (Photos) is optional — the rep can always advance.
+  const canNext = step === 0
+    ? customer.name && customer.phone && customer.email && customer.address && customer.rep
+    : step === 1 ? !!scope.roofType : true
 
   return (
     <>
@@ -147,11 +156,12 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ge
         <div className="card">
           {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
-          {step === 2 && <StepReview   customer={customer} scope={scope} onGenerate={onGenerate} generating={generating} genError={genError} />}
+          {step === 2 && <StepPhotos   photos={photos} setPhotos={setPhotos} analysis={analysis} setAnalysis={setAnalysis} customer={customer} scope={scope} onBackToScope={() => setStep(1)} />}
+          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} analysis={analysis} onGenerate={onGenerate} generating={generating} genError={genError} />}
 
           <div className="step-nav">
             <button className="btn btn-back" disabled={step === 0} onClick={() => setStep(step - 1)}>← Back</button>
-            {step < 2 ? (
+            {step < LAST ? (
               <button className="btn btn-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>Next →</button>
             ) : null}
           </div>
@@ -257,7 +267,195 @@ function StepScope({ scope, setScope }) {
   )
 }
 
-function StepReview({ customer, scope, onGenerate, generating, genError }) {
+/* ─────────────── STEP: PHOTOS & AI ─────────────── */
+const MAX_PHOTOS = 6
+
+// Downscale a File to a JPEG data URL no larger than `maxDim` on its longest edge.
+// Phone roof photos are 5-12MB; this brings each one down to ~200-400KB so the
+// payload stays small and OpenAI Vision still has plenty of detail.
+function fileToDownscaledDataUrl(file, maxDim = 1600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read file'))
+    reader.onload = e => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Could not decode image (HEIC may not be supported on this browser)'))
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height)
+          width = Math.round(width * scale)
+          height = Math.round(height * scale)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function ConfidenceBadge({ level }) {
+  const map = { high: ['#D1FAE5', '#065F46'], medium: ['#FEF3C7', '#92400E'], low: ['#FEE2E2', '#991B1B'] }
+  const [bg, fg] = map[level] || map.low
+  return <span className="conf-badge" style={{ background: bg, color: fg }}>{(level || 'low').toUpperCase()}</span>
+}
+
+function StepPhotos({ photos, setPhotos, analysis, setAnalysis, customer, scope, onBackToScope }) {
+  const [busy, setBusy]       = useState(false)   // downscaling files
+  const [analyzing, setAnal]  = useState(false)   // calling the AI
+  const [err, setErr]         = useState('')
+
+  async function onPick(e) {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''  // allow re-picking the same file
+    if (!files.length) return
+    setErr(''); setBusy(true)
+    try {
+      const room = MAX_PHOTOS - photos.length
+      const toAdd = files.slice(0, room)
+      const dataUrls = []
+      for (const f of toAdd) {
+        try { dataUrls.push(await fileToDownscaledDataUrl(f)) }
+        catch (e2) { setErr(e2.message) }
+      }
+      if (dataUrls.length) {
+        setPhotos(p => [...p, ...dataUrls])
+        setAnalysis(null)  // photos changed — stale analysis no longer matches
+      }
+      if (files.length > room) setErr(`Only ${MAX_PHOTOS} photos max — extras were skipped.`)
+    } finally { setBusy(false) }
+  }
+
+  function removePhoto(i) {
+    setPhotos(p => p.filter((_, idx) => idx !== i))
+    setAnalysis(null)
+  }
+
+  async function analyze() {
+    if (!photos.length) return
+    setErr(''); setAnal(true)
+    try {
+      const r = await fetch('/api/analyze-photos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images: photos,
+          context: { customer: customer.name, address: customer.address, notes: customer.notes },
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Analysis failed')
+      setAnalysis(d.analysis)
+    } catch (e) { setErr(e.message) }
+    finally { setAnal(false) }
+  }
+
+  return (
+    <div>
+      <h2 className="step-title">PHOTOS & AI ANALYSIS</h2>
+      <p className="step-sub">Optional — but powerful. Add roof photos and let AI give you a second opinion on squares, pitch, material, and damage. You stay in control: the AI <strong>suggests</strong>, you decide.</p>
+
+      <div className="section-label">ROOF PHOTOS <span style={{fontWeight:600,color:'var(--light)'}}>({photos.length}/{MAX_PHOTOS})</span></div>
+
+      <div className="photo-grid">
+        {photos.map((src, i) => (
+          <div key={i} className="photo-thumb">
+            <img src={src} alt={`Roof photo ${i+1}`} />
+            <button type="button" className="photo-remove" onClick={() => removePhoto(i)} title="Remove">✕</button>
+          </div>
+        ))}
+        {photos.length < MAX_PHOTOS && (
+          <label className={`photo-add ${busy ? 'busy' : ''}`}>
+            <input type="file" accept="image/*" capture="environment" multiple onChange={onPick} disabled={busy} />
+            <div className="photo-add-icon">{busy ? '⏳' : '＋'}</div>
+            <div className="photo-add-text">{busy ? 'Processing…' : 'Add Photos'}</div>
+          </label>
+        )}
+      </div>
+
+      {err && <div className="error-banner">⚠️ {err}</div>}
+
+      {photos.length > 0 && (
+        <button className="btn-analyze" onClick={analyze} disabled={analyzing}>
+          {analyzing ? '🔍 AI is analyzing the roof…' : `🤖 Analyze ${photos.length} Photo${photos.length>1?'s':''} with AI`}
+        </button>
+      )}
+
+      {analysis && (
+        <div className="analysis-card">
+          <div className="analysis-head">
+            <div className="analysis-title">🤖 AI ROOF ANALYSIS</div>
+            <div className="analysis-score">
+              Condition <strong>{analysis.condition_score ?? '—'}/10</strong>
+            </div>
+          </div>
+
+          <div className="analysis-rows">
+            <div className="analysis-row">
+              <div className="ar-label">Squares</div>
+              <div className="ar-value">{analysis.squares_estimate?.value || '—'}</div>
+              <ConfidenceBadge level={analysis.squares_estimate?.confidence} />
+            </div>
+            <div className="analysis-row">
+              <div className="ar-label">Pitch</div>
+              <div className="ar-value">{analysis.pitch_estimate?.value || '—'}</div>
+              <ConfidenceBadge level={analysis.pitch_estimate?.confidence} />
+            </div>
+            <div className="analysis-row">
+              <div className="ar-label">Material</div>
+              <div className="ar-value">{analysis.material_guess?.value || '—'}</div>
+              <ConfidenceBadge level={analysis.material_guess?.confidence} />
+            </div>
+          </div>
+
+          {analysis.damage_summary && (
+            <div className="analysis-block">
+              <div className="ab-label">Damage Summary</div>
+              <div className="ab-text">{analysis.damage_summary}</div>
+            </div>
+          )}
+
+          {Array.isArray(analysis.recommended_addons) && analysis.recommended_addons.length > 0 && (
+            <div className="analysis-block">
+              <div className="ab-label">Recommended Add-ons</div>
+              <div className="addon-chips">
+                {analysis.recommended_addons.map(id => {
+                  const def = ADDON_DEFS.find(a => a.id === id)
+                  const active = scope.addons.includes(id)
+                  return (
+                    <span key={id} className={`addon-chip ${active ? 'active' : ''}`}>
+                      {def ? `${def.icon} ${def.label}` : id}{active ? ' ✓' : ''}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {analysis.notes && (
+            <div className="analysis-block">
+              <div className="ab-label">Notes for the Estimator</div>
+              <div className="ab-text">{analysis.notes}</div>
+            </div>
+          )}
+
+          <div className="analysis-hint">
+            💡 These are <strong>AI suggestions</strong>, not final numbers. If you want to adjust the
+            scope based on this, <button type="button" className="link-btn" onClick={onBackToScope}>← go back to Roof & Scope</button>.
+            The analysis is saved with the proposal either way.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StepReview({ customer, scope, photos, analysis, onGenerate, generating, genError }) {
   return (
     <div>
       <h2 className="step-title">REVIEW & GENERATE</h2>
@@ -289,10 +487,23 @@ function StepReview({ customer, scope, onGenerate, generating, genError }) {
         </div>
       )}
 
+      <div className="review-notes" style={{borderLeftColor:'var(--navy)'}}>
+        <div className="rb-lbl">PHOTOS & AI</div>
+        <div className="rb-line">
+          {photos?.length
+            ? `${photos.length} roof photo${photos.length>1?'s':''} attached`
+            : 'No photos attached'}
+          {' · '}
+          {analysis
+            ? `AI analysis ran (condition ${analysis.condition_score ?? '?'}/10)`
+            : 'AI analysis not run'}
+        </div>
+      </div>
+
       {genError && <div className="error-banner">⚠️ {genError}</div>}
 
       <button className="btn-mega" onClick={onGenerate} disabled={generating}>
-        {generating ? '⏳ Claude is writing your three tier options…' : '⚡ GENERATE PROPOSAL WITH AI'}
+        {generating ? '⏳ AI is writing your three tier options…' : '⚡ GENERATE PROPOSAL WITH AI'}
       </button>
     </div>
   )
@@ -638,11 +849,46 @@ function GlobalCSS() {
       .setting-row input:focus{border-color:var(--crimson)}
       .env-hint{margin-top:18px;padding:14px 18px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;font-size:13px;color:#78350F;line-height:1.6}
       .env-hint code{background:rgba(0,0,0,.07);padding:2px 7px;border-radius:4px;font-family:monospace;font-size:12px}
+      /* ── Photos & AI step ── */
+      .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+      .photo-thumb{position:relative;border-radius:11px;overflow:hidden;border:2px solid var(--bord);aspect-ratio:4/3;background:var(--cream)}
+      .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+      .photo-remove{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;border:none;background:rgba(12,28,56,.82);color:#fff;font-size:13px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+      .photo-remove:hover{background:var(--crimson)}
+      .photo-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--bord);border-radius:11px;aspect-ratio:4/3;cursor:pointer;background:var(--cream);transition:all .15s}
+      .photo-add:hover{border-color:var(--crimson);background:rgba(176,30,23,.04)}
+      .photo-add.busy{opacity:.6;cursor:wait}
+      .photo-add input{display:none}
+      .photo-add-icon{font-size:30px;color:var(--mute);font-weight:300}
+      .photo-add-text{font-size:12px;font-weight:800;color:var(--mute)}
+      .btn-analyze{width:100%;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:900;letter-spacing:.5px;cursor:pointer;font-family:inherit;margin-top:6px;transition:transform .12s}
+      .btn-analyze:hover:not(:disabled){transform:translateY(-1px)}
+      .btn-analyze:disabled{opacity:.6;cursor:not-allowed}
+      .analysis-card{margin-top:18px;border:2px solid var(--bord);border-radius:14px;overflow:hidden}
+      .analysis-head{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy),var(--navy2));padding:14px 18px}
+      .analysis-title{color:var(--gold-l);font-size:13px;font-weight:900;letter-spacing:1px}
+      .analysis-score{color:#fff;font-size:13px;font-weight:600}
+      .analysis-score strong{font-size:16px;font-weight:900;margin-left:4px}
+      .analysis-rows{padding:6px 18px}
+      .analysis-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--bord)}
+      .analysis-row:last-child{border-bottom:none}
+      .ar-label{font-size:11px;font-weight:900;color:var(--mute);text-transform:uppercase;letter-spacing:1px;width:78px;flex-shrink:0}
+      .ar-value{flex:1;font-size:14px;font-weight:700;color:var(--navy)}
+      .conf-badge{font-size:9px;font-weight:900;letter-spacing:.5px;padding:3px 8px;border-radius:20px}
+      .analysis-block{padding:12px 18px;border-top:1px solid var(--bord)}
+      .ab-label{font-size:10px;font-weight:900;color:var(--mute);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px}
+      .ab-text{font-size:13px;color:var(--text);line-height:1.55}
+      .addon-chips{display:flex;flex-wrap:wrap;gap:7px}
+      .addon-chip{font-size:12px;font-weight:700;padding:5px 11px;border-radius:20px;background:var(--cream);border:2px solid var(--bord);color:var(--mute)}
+      .addon-chip.active{background:rgba(16,185,129,.12);border-color:var(--success);color:#065F46}
+      .analysis-hint{padding:13px 18px;background:#FFFBEB;border-top:1px solid #FCD34D;font-size:12px;color:#78350F;line-height:1.6}
+      .link-btn{background:none;border:none;color:var(--crimson);font-weight:800;font-family:inherit;font-size:12px;cursor:pointer;padding:0;text-decoration:underline}
       @media(max-width:780px){
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}
         .addon-grid{grid-template-columns:1fr}
         .review-grid{grid-template-columns:1fr}
+        .photo-grid{grid-template-columns:repeat(2,1fr)}
         .nav{padding:12px 16px}
         .main{padding:18px 14px 40px}
         .card{padding:24px 22px}

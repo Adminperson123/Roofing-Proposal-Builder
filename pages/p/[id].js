@@ -102,6 +102,19 @@ export default function PublicProposal() {
             )}
           </section>
 
+          {Array.isArray(p.photo_urls) && p.photo_urls.length > 0 && (
+            <section className="pub-photos">
+              <div className="pub-photos-title">PHOTOS FROM YOUR ROOF INSPECTION</div>
+              <div className="pub-photos-grid">
+                {p.photo_urls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" className="pub-photo">
+                    <img src={url} alt={`Roof inspection photo ${i + 1}`} loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
           {accepted ? (
             <section className="pub-accepted">
               <div className="pub-accepted-icon">✓</div>
@@ -204,6 +217,12 @@ export default function PublicProposal() {
         .pub-scope-grid span{font-size:10px;font-weight:700;color:var(--mute);letter-spacing:1px}
         .pub-scope-grid strong{font-size:14px;font-weight:800;color:var(--navy)}
         .pub-addons{margin-top:14px;font-size:13px;color:var(--mute);padding-top:12px;border-top:1px solid var(--bord)}
+        .pub-photos{margin-bottom:34px}
+        .pub-photos-title{font-size:11px;font-weight:800;color:var(--mute);letter-spacing:1.5px;margin-bottom:14px}
+        .pub-photos-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+        .pub-photo{display:block;border-radius:11px;overflow:hidden;border:2px solid var(--bord);aspect-ratio:4/3;background:#fff}
+        .pub-photo img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s}
+        .pub-photo:hover img{transform:scale(1.05)}
         .pub-section-title{font-size:14px;font-weight:900;color:var(--navy);letter-spacing:2px;margin-bottom:6px}
         .pub-section-sub{font-size:14px;color:var(--mute);margin-bottom:24px;max-width:680px}
         .pub-tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:34px}
@@ -255,6 +274,7 @@ export default function PublicProposal() {
           .pub-tiers{grid-template-columns:1fr}
           .pub-tier.pop{transform:none}
           .pub-scope-grid{grid-template-columns:repeat(2,1fr)}
+          .pub-photos-grid{grid-template-columns:repeat(2,1fr)}
           .pub-name{font-size:26px}
           .pub-hero{flex-direction:column;gap:14px;align-items:flex-start}
           .pub-hero-sub{text-align:left}
