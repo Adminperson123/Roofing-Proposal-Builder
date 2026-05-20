@@ -87,6 +87,9 @@ export default function PublicProposal() {
             <h1 className="pub-name">{p.customer_name}</h1>
             <div className="pub-addr">{p.customer_address}</div>
             {p.rep_name && <div className="pub-rep">Your rep: <strong>{p.rep_name}</strong></div>}
+            {p._wasForwarded && (
+              <div className="pub-updated-note">↻ This proposal was updated — you're viewing the most current version.</div>
+            )}
           </section>
 
           <section className="pub-scope">
@@ -229,6 +232,7 @@ export default function PublicProposal() {
         .pub-name{font-size:36px;font-weight:900;color:var(--navy);line-height:1.1;margin-bottom:6px}
         .pub-addr{font-size:14px;color:var(--mute)}
         .pub-rep{font-size:13px;color:var(--mute);margin-top:4px}
+        .pub-updated-note{margin-top:10px;font-size:12px;color:#78350F;background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:8px 12px;display:inline-block}
         .pub-scope{background:#fff;border-radius:14px;padding:22px 26px;margin-bottom:34px;border-left:5px solid var(--gold);box-shadow:0 2px 12px rgba(0,0,0,.04)}
         .pub-scope-title{font-size:11px;font-weight:800;color:var(--mute);letter-spacing:1.5px;margin-bottom:14px}
         .pub-scope-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}

@@ -6,19 +6,36 @@ export default async function handler(req, res) {
   const sb = serverClient()
 
   if (req.method === 'GET') {
-    const { data, error } = await sb.from('proposals').select('*').eq('id', id).single()
+    // ?noview=1 — used by the admin wizard when loading a proposal to revise.
+    // Skips view-marking + the rep notification so an internal reload isn't
+    // mistaken for a real customer opening the proposal.
+    const skipView = 'noview' in req.query
+
+    const { data: requested, error } = await sb.from('proposals').select('*').eq('id', id).single()
     if (error) return res.status(404).json({ error: 'Not found' })
 
-    // Mark first view + notify the rep (best-effort, never block the page render)
-    if (!data.viewed_at) {
-      const now = new Date().toISOString()
-      await sb.from('proposals').update({ viewed_at: now, status: 'viewed' }).eq('id', id)
-      data.viewed_at = now
-      data.status = 'viewed'
+    // Follow the revision chain (superseded_by_id → … → tip) so an old link
+    // always lands the customer on the newest version. Guard against loops.
+    let proposal = requested
+    let guard = 0
+    while (proposal.superseded_by_id && guard < 10) {
+      const { data: next } = await sb.from('proposals').select('*').eq('id', proposal.superseded_by_id).single()
+      if (!next) break
+      proposal = next
+      guard++
+    }
+    const wasForwarded = proposal.id !== requested.id
 
-      // Fire-and-forget — don't await before responding to the customer.
-      // The customer should see the proposal instantly; the rep ping happens in the background.
-      notifyRepOfView({ proposal: data }).catch(err => {
+    // Mark first view + notify the rep — only for genuine customer views, and
+    // always against the version actually being shown (the chain tip).
+    if (!skipView && !proposal.viewed_at) {
+      const now = new Date().toISOString()
+      await sb.from('proposals').update({ viewed_at: now, status: 'viewed' }).eq('id', proposal.id)
+      proposal.viewed_at = now
+      proposal.status = 'viewed'
+
+      // Fire-and-forget — don't block the customer's page render on the rep ping.
+      notifyRepOfView({ proposal }).catch(err => {
         console.error('rep notification threw unexpectedly:', err)
       })
     }
@@ -26,12 +43,14 @@ export default async function handler(req, res) {
     // Attach financing partner config (env-driven). Kept server-side so we don't
     // need NEXT_PUBLIC_ vars. Both fields are null until Oscar sets the real partner;
     // the public page degrades gracefully when applyUrl is missing.
-    data.financing = {
+    proposal.financing = {
       partnerName: process.env.FINANCING_PARTNER_NAME || null,
       applyUrl:    process.env.FINANCING_PARTNER_URL || null,
     }
+    // True when the customer's link pointed at an older version we forwarded.
+    proposal._wasForwarded = wasForwarded
 
-    return res.status(200).json(data)
+    return res.status(200).json(proposal)
   }
 
   if (req.method === 'DELETE') {

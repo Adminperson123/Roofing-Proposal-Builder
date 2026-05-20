@@ -35,6 +35,8 @@ export default function Home() {
   const [photos, setPhotos]     = useState([])    // array of downscaled data URLs
   const [analysis, setAnalysis] = useState(null)  // OpenAI Vision result, or null
   const [financingEnabled, setFinancingEnabled] = useState(false)
+  const [revisingFrom, setRevisingFrom] = useState(null)  // { id, version } when revising, else null
+  const [editReason, setEditReason]     = useState('')    // why this revision is being made
 
   // Hydrate settings from localStorage (rep-local pricing)
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function Home() {
   function reset() {
     setStep(0); setCustomer(blankCustomer); setScope(blankScope); setResult(null); setGenError('')
     setPhotos([]); setAnalysis(null); setFinancingEnabled(false)
+    setRevisingFrom(null); setEditReason('')
   }
 
   async function generate() {
@@ -77,13 +80,46 @@ export default function Home() {
     try {
       const r = await fetch('/api/generate', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ customer, scope, settings, photos, visionAnalysis: analysis, financingEnabled }),
+        body: JSON.stringify({
+          customer, scope, settings, photos, visionAnalysis: analysis, financingEnabled,
+          reviseOf:   revisingFrom?.id || null,
+          editReason: revisingFrom ? editReason : null,
+        }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Generation failed')
       setResult(d)
     } catch (e) { setGenError(e.message) }
     finally { setGenerating(false) }
+  }
+
+  // Load an existing proposal back into the builder as the start of a new version.
+  // Uses ?noview=1 so this internal reload isn't counted as a customer view.
+  async function startRevision(proposalId) {
+    try {
+      const r = await fetch(`/api/proposal/${proposalId}?noview=1`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Could not load proposal')
+      setCustomer({
+        name: d.customer_name || '', phone: d.customer_phone || '', email: d.customer_email || '',
+        address: d.customer_address || '', rep: d.rep_name || '', ghlId: d.ghl_contact_id || '',
+        notes: d.inspection_notes || '',
+      })
+      setScope({
+        roofType: d.roof_type || 'shingle', tileSubtype: d.tile_subtype || 'flat',
+        squares: d.squares ?? 14, pitch: d.pitch ?? 5, stories: d.stories ?? 1,
+        layers: d.layers ?? 1, deckingSheets: d.decking_sheets ?? 0, permit: d.permit_amount ?? 0,
+        addons: Array.isArray(d.addons) ? d.addons : [],
+      })
+      setFinancingEnabled(!!d.financing_enabled)
+      setPhotos([])                         // existing photos carry over server-side
+      setAnalysis(d.vision_analysis || null)
+      setRevisingFrom({ id: d.id, version: d.version_num || 1 })
+      setEditReason(''); setResult(null); setGenError(''); setStep(0)
+      setTab('builder')
+    } catch (e) {
+      alert('Could not start revision: ' + e.message)
+    }
   }
 
   return (
@@ -119,12 +155,13 @@ export default function Home() {
             photos={photos} setPhotos={setPhotos}
             analysis={analysis} setAnalysis={setAnalysis}
             financingEnabled={financingEnabled} setFinancingEnabled={setFinancingEnabled}
+            revisingFrom={revisingFrom} editReason={editReason} setEditReason={setEditReason}
             generating={generating} genError={genError}
             onGenerate={generate}
           />
         )
       )}
-      {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} />}
+      {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onRevise={startRevision} />}
       {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && <SettingsTab settings={settings} onChange={persistSettings} />}
 
@@ -134,7 +171,7 @@ export default function Home() {
 }
 
 /* ─────────────── BUILDER ─────────────── */
-function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, analysis, setAnalysis, financingEnabled, setFinancingEnabled, generating, genError, onGenerate }) {
+function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, analysis, setAnalysis, financingEnabled, setFinancingEnabled, revisingFrom, editReason, setEditReason, generating, genError, onGenerate }) {
   const LABELS = ['Customer', 'Roof & Scope', 'Photos & AI', 'Review & Generate']
   const LAST = LABELS.length - 1
   // Step 2 (Photos) is optional — the rep can always advance.
@@ -144,6 +181,12 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
 
   return (
     <>
+      {revisingFrom && (
+        <div className="revise-banner">
+          ✏️ <strong>Revising proposal</strong> — generating this will create <strong>version {revisingFrom.version + 1}</strong>.
+          The customer's existing link automatically updates to the new version.
+        </div>
+      )}
       <div className="prog">
         <div className="prog-inner">
           {LABELS.map((lbl, i) => (
@@ -161,7 +204,7 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
           {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
           {step === 2 && <StepPhotos   photos={photos} setPhotos={setPhotos} analysis={analysis} setAnalysis={setAnalysis} customer={customer} scope={scope} onBackToScope={() => setStep(1)} />}
-          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} analysis={analysis} financingEnabled={financingEnabled} setFinancingEnabled={setFinancingEnabled} onGenerate={onGenerate} generating={generating} genError={genError} />}
+          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} analysis={analysis} financingEnabled={financingEnabled} setFinancingEnabled={setFinancingEnabled} revisingFrom={revisingFrom} editReason={editReason} setEditReason={setEditReason} onGenerate={onGenerate} generating={generating} genError={genError} />}
 
           <div className="step-nav">
             <button className="btn btn-back" disabled={step === 0} onClick={() => setStep(step - 1)}>← Back</button>
@@ -459,7 +502,7 @@ function StepPhotos({ photos, setPhotos, analysis, setAnalysis, customer, scope,
   )
 }
 
-function StepReview({ customer, scope, photos, analysis, financingEnabled, setFinancingEnabled, onGenerate, generating, genError }) {
+function StepReview({ customer, scope, photos, analysis, financingEnabled, setFinancingEnabled, revisingFrom, editReason, setEditReason, onGenerate, generating, genError }) {
   return (
     <div>
       <h2 className="step-title">REVIEW & GENERATE</h2>
@@ -517,10 +560,22 @@ function StepReview({ customer, scope, photos, analysis, financingEnabled, setFi
         </div>
       </div>
 
+      {revisingFrom && (
+        <div className="field full" style={{marginTop:14}}>
+          <label>Reason for this revision (optional — saved with the proposal history)</label>
+          <textarea rows={2} value={editReason} onChange={e=>setEditReason(e.target.value)}
+            placeholder="e.g. Customer requested upgraded shingle; added chimney flashing" />
+        </div>
+      )}
+
       {genError && <div className="error-banner">⚠️ {genError}</div>}
 
       <button className="btn-mega" onClick={onGenerate} disabled={generating}>
-        {generating ? '⏳ AI is writing your three tier options…' : '⚡ GENERATE PROPOSAL WITH AI'}
+        {generating
+          ? '⏳ AI is writing your three tier options…'
+          : revisingFrom
+            ? `⚡ GENERATE VERSION ${revisingFrom.version + 1}`
+            : '⚡ GENERATE PROPOSAL WITH AI'}
       </button>
     </div>
   )
@@ -535,8 +590,12 @@ function SuccessScreen({ result, onReset }) {
     <main className="main">
       <div className="card">
         <div className="success-icon">✓</div>
-        <h2 className="success-title">Proposal generated!</h2>
-        <p className="success-sub">Three tier options ready for the customer. Share this link — they can review, pick a package, and sign on their phone.</p>
+        <h2 className="success-title">{result.version > 1 ? `Version ${result.version} created!` : 'Proposal generated!'}</h2>
+        <p className="success-sub">
+          {result.version > 1
+            ? `This is version ${result.version}. The customer's existing link now shows this version automatically — you don't need to re-send it.`
+            : 'Three tier options ready for the customer. Share this link — they can review, pick a package, and sign on their phone.'}
+        </p>
 
         <div className="share-row">
           <input className="share-input" readOnly value={result.shareUrl} />
@@ -559,7 +618,7 @@ function SuccessScreen({ result, onReset }) {
 }
 
 /* ─────────────── PROPOSALS TAB ─────────────── */
-function ProposalsTab({ onOpenBuilder }) {
+function ProposalsTab({ onOpenBuilder, onRevise }) {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -587,7 +646,10 @@ function ProposalsTab({ onOpenBuilder }) {
     navigator.clipboard.writeText(url); alert('Link copied:\n' + url)
   }
 
-  const filtered = q ? list.filter(p => (p.customer_name + ' ' + p.prop_num).toLowerCase().includes(q.toLowerCase())) : list
+  // Only show the current version of each proposal — superseded (revised-away)
+  // versions are hidden so the list stays clean. The vN badge flags revisions.
+  const live = list.filter(p => !p.superseded_by_id)
+  const filtered = q ? live.filter(p => (p.customer_name + ' ' + p.prop_num).toLowerCase().includes(q.toLowerCase())) : live
 
   return (
     <main className="main">
@@ -613,7 +675,7 @@ function ProposalsTab({ onOpenBuilder }) {
             <tbody>
               {filtered.map(p => (
                 <tr key={p.id}>
-                  <td className="mono">{p.prop_num}</td>
+                  <td className="mono">{p.prop_num}{p.version_num > 1 && <span className="ver-badge">v{p.version_num}</span>}</td>
                   <td><div className="ptable-name">{p.customer_name}</div><div className="ptable-meta">{p.rep_name || ''}</div></td>
                   <td>{p.roof_type === 'tile' ? '🏛️ Tile' : '🏠 Shingle'} {p.squares}sq</td>
                   <td><StatusBadge status={p.status} /></td>
@@ -623,6 +685,9 @@ function ProposalsTab({ onOpenBuilder }) {
                     <button className="btn-icon" onClick={() => copy(p.id)} title="Copy link">🔗</button>
                     <a className="btn-icon" href={`/p/${p.id}`} target="_blank" rel="noreferrer" title="Open">👁</a>
                     <a className="btn-icon" href={`/api/proposal/${p.id}/pdf`} target="_blank" rel="noreferrer" title="PDF">⬇️</a>
+                    {p.status !== 'accepted' && p.status !== 'signed' && (
+                      <button className="btn-icon" onClick={() => onRevise(p.id)} title="Revise — create a new version">✏️</button>
+                    )}
                     <button className="btn-icon danger" onClick={() => del(p.id)} title="Delete">🗑</button>
                   </td>
                 </tr>
@@ -1017,6 +1082,10 @@ function GlobalCSS() {
       .fin-chk.on{background:var(--success);border-color:var(--success)}
       .fin-title{font-size:14px;font-weight:800;color:var(--navy)}
       .fin-sub{font-size:12px;color:var(--mute);margin-top:3px;line-height:1.5}
+      /* ── Revision mode ── */
+      .revise-banner{background:linear-gradient(135deg,#92400E,#B45309);color:#fff;font-size:13px;font-weight:600;padding:12px 32px;text-align:center;line-height:1.5}
+      .revise-banner strong{font-weight:900;color:#FDE68A}
+      .ver-badge{display:inline-block;margin-left:6px;background:var(--gold);color:#fff;font-size:9px;font-weight:900;letter-spacing:.5px;padding:2px 6px;border-radius:5px;vertical-align:middle}
       @media(max-width:780px){
         .grid2{grid-template-columns:1fr}
         .scope-grid{grid-template-columns:1fr 1fr}
