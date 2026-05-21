@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   '/api/webhook',          // GHL POST endpoint
   '/p/',                   // public proposal page
   '/c/',                   // public customer project timeline (uuid-token gated)
+  '/present/',             // presentation mode — shows already-public proposal data
   '/api/customer/',        // public customer timeline API (uuid-token gated)
   '/field/',               // mobile on-site photo upload (token-gated at endpoint)
   '/api/proposal/',        // public proposal API (id-gated, public read OK)

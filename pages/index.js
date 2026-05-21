@@ -166,6 +166,7 @@ export default function Home() {
         <button className={`tab ${tab==='builder'?'on':''}`}   onClick={() => setTab('builder')}>📋 Build</button>
         <button className={`tab ${tab==='proposals'?'on':''}`} onClick={() => setTab('proposals')}>📁 Proposals</button>
         <button className={`tab ${tab==='customers'?'on':''}`} onClick={() => setTab('customers')}>🏠 Customers</button>
+        <button className={`tab ${tab==='inspections'?'on':''}`} onClick={() => setTab('inspections')}>🔍 Inspections</button>
         <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>👥 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}  onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>
@@ -193,6 +194,7 @@ export default function Home() {
       {tab === 'dashboard' && <OwnerDashboard onOpen={setOpenProposal} onGoBuild={() => { setTab('builder'); reset() }} />}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onOpen={setOpenProposal} />}
       {tab === 'customers' && <CustomersTab onOpen={setOpenProposal} />}
+      {tab === 'inspections' && <InspectionsTab reps={settings?.reps || []} />}
       {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && settings && <SettingsTab initial={settings} />}
 
@@ -555,6 +557,7 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
 
         <div className="success-actions">
           <a className="sa-btn" href={result.shareUrl} target="_blank" rel="noreferrer"><span className="sa-ic">👁</span>View proposal</a>
+          <a className="sa-btn" href={`/present/${result.id}`} target="_blank" rel="noreferrer"><span className="sa-ic">🖥</span>Presentation mode</a>
           <button className="sa-btn" onClick={send} disabled={sendState === 'sending' || sendState === 'sent'}>
             <span className="sa-ic">📨</span>
             {sendState === 'sending' ? 'Sending…' : sendState === 'sent' ? '✓ Sent to customer' : 'Send to customer'}
@@ -1250,6 +1253,91 @@ function AssistantWidget() {
         </div>
       )}
     </>
+  )
+}
+
+/* ─────────────── INSPECTIONS TAB (pre-quote site inspections) ─────────────── */
+function InspectionsTab() {
+  const [list, setList]     = useState(null)
+  const [error, setError]   = useState('')
+  const [showForm, setShow] = useState(false)
+  const [form, setForm]     = useState({ customer_name: '', customer_address: '', customer_phone: '', rep_name: '' })
+  const [busy, setBusy]     = useState(false)
+
+  function load() {
+    fetch('/api/inspections')
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setList(d.inspections || []) })
+      .catch(e => setError(e.message))
+  }
+  useEffect(() => { load() }, [])
+
+  async function create() {
+    if (!form.customer_name.trim() || !form.customer_address.trim()) {
+      setError('Customer name and address are required.'); return
+    }
+    setBusy(true); setError('')
+    try {
+      const r = await fetch('/api/inspections', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Could not create inspection')
+      window.location.href = `/inspection/${d.inspection.id}`
+    } catch (e) { setError(e.message); setBusy(false) }
+  }
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  return (
+    <main className="main">
+      <div className="card">
+        <div className="proposals-head">
+          <div><h2 className="step-title">SITE INSPECTIONS</h2><p className="step-sub">On-site assessments — run one before quoting a roof.</p></div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShow(s => !s)}>{showForm ? 'Cancel' : '+ New Inspection'}</button>
+        </div>
+
+        {showForm && (
+          <div className="insp-form">
+            <div className="grid2">
+              <Field label="Customer Name *"   value={form.customer_name}    onChange={v => set('customer_name', v)}    placeholder="Jane Smith" />
+              <Field label="Phone"             value={form.customer_phone}   onChange={v => set('customer_phone', v)}   placeholder="(909) 555-0100" />
+              <Field full label="Property Address *" value={form.customer_address} onChange={v => set('customer_address', v)} placeholder="123 Main St, Yucaipa, CA" />
+              <Field label="Sales Rep"         value={form.rep_name}         onChange={v => set('rep_name', v)}         placeholder="Carlos M." />
+            </div>
+            <button className="btn-mega" onClick={create} disabled={busy} style={{marginTop:14}}>
+              {busy ? '⏳ Creating…' : '🔍 Start Inspection'}
+            </button>
+          </div>
+        )}
+
+        {error && <div className="error-banner" style={{marginTop:14}}>⚠️ {error}</div>}
+
+        {!list ? (
+          <div className="empty"><div className="empty-icon">⏳</div>Loading…</div>
+        ) : !list.length ? (
+          <div className="empty"><div className="empty-icon">🔍</div><strong>No inspections yet</strong><div>Tap "+ New Inspection" to start a step-by-step site assessment.</div></div>
+        ) : (
+          <table className="ptable" style={{marginTop:16}}>
+            <thead><tr><th>#</th><th>Customer</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody>
+              {list.map(ins => (
+                <tr key={ins.id}>
+                  <td className="mono">{ins.inspection_num}</td>
+                  <td><div className="ptable-name">{ins.customer_name}</div><div className="ptable-meta">{ins.customer_address}</div></td>
+                  <td><span className={`status-pill insp-pill-${ins.status || 'draft'}`}>{(ins.status || 'draft').toUpperCase()}</span></td>
+                  <td className="meta">{new Date(ins.created_at).toLocaleDateString()}</td>
+                  <td style={{whiteSpace:'nowrap'}}>
+                    <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}`} target="_blank" rel="noreferrer">{ins.status === 'submitted' ? 'View' : 'Continue'}</a>
+                    {ins.status === 'submitted' && <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}/pdf`} target="_blank" rel="noreferrer" style={{marginLeft:6}}>📄 Report</a>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </main>
   )
 }
 
