@@ -507,6 +507,8 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
   const [copied, setCopied]       = useState(false)
   const [sendState, setSendState] = useState('idle')  // idle | sending | sent | error
   const [sendMsg, setSendMsg]     = useState('')
+  const [ghlState, setGhlState]   = useState('idle')  // idle | syncing | done | error
+  const [ghlMsg, setGhlMsg]       = useState('')
 
   function copy() {
     navigator.clipboard.writeText(result.shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1800)
@@ -521,6 +523,17 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
       if (!r.ok) throw new Error(d.error || 'Send failed')
       setSendState('sent')
     } catch (e) { setSendState('error'); setSendMsg(e.message) }
+  }
+  async function syncGhl() {
+    setGhlState('syncing'); setGhlMsg('')
+    try {
+      const r = await fetch(`/api/proposal/${result.id}/sync-ghl`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'GHL sync failed')
+      setGhlState('done'); setGhlMsg(d.matched || 'Synced to GHL')
+    } catch (e) { setGhlState('error'); setGhlMsg(e.message) }
   }
 
   return (
@@ -548,11 +561,17 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
           </button>
           <a className="sa-btn" href={`/api/proposal/${result.id}/pdf`} target="_blank" rel="noreferrer"><span className="sa-ic">⬇️</span>Download PDF</a>
           <button className="sa-btn" onClick={() => onEdit && onEdit(result)}><span className="sa-ic">✏️</span>Edit with AI</button>
+          <button className="sa-btn" onClick={syncGhl} disabled={ghlState === 'syncing' || ghlState === 'done'}>
+            <span className="sa-ic">🔗</span>
+            {ghlState === 'syncing' ? 'Syncing…' : ghlState === 'done' ? '✓ Synced to GHL' : 'Push to GHL'}
+          </button>
           <button className="sa-btn" onClick={onHome}><span className="sa-ic">🏠</span>Back to Home</button>
           <button className="sa-btn sa-primary" onClick={onReset}><span className="sa-ic">＋</span>New Proposal</button>
         </div>
 
         {sendState === 'error' && <div className="error-banner" style={{marginTop:14}}>⚠️ {sendMsg}</div>}
+        {ghlState === 'error' && <div className="error-banner" style={{marginTop:14}}>⚠️ {ghlMsg}</div>}
+        {ghlState === 'done' && <div className="ok-banner" style={{marginTop:14}}>🔗 {ghlMsg}</div>}
       </div>
     </main>
   )
@@ -1996,6 +2015,7 @@ function GlobalCSS() {
       .sa-btn.sa-primary{background:#B01E17;border-color:#B01E17;color:#fff}
       .sa-btn.sa-primary:hover{background:#D4251C;color:#fff}
       .sa-ic{font-size:16px}
+      .ok-banner{background:#D1FAE5;border:2px solid #6EE7B7;border-radius:9px;padding:11px 14px;color:#065F46;font-size:13px;font-weight:700}
       @media(max-width:780px){
         .kpi-row-6{grid-template-columns:1fr 1fr}
         .dash-grid{grid-template-columns:1fr}
