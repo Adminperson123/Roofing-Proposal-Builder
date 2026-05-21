@@ -172,7 +172,12 @@ export default function Home() {
 
       {tab === 'builder' && (
         result ? (
-          <SuccessScreen result={result} onReset={reset} />
+          <SuccessScreen
+            result={result}
+            onReset={reset}
+            onHome={() => { setTab('dashboard'); reset() }}
+            onEdit={(r) => setOpenProposal({ id: r.id, prop_num: r.propNum })}
+          />
         ) : (
           <BuilderFlow
             step={step} setStep={setStep}
@@ -270,7 +275,6 @@ function StepCustomer({ customer, setCustomer, reps = [] }) {
             {customer.lat && customer.lng && <span className="addr-pill">{customer.lat.toFixed(4)}, {customer.lng.toFixed(4)}</span>}
           </div>
         )}
-        <Field full label="GHL Contact ID (auto-filled)" value={customer.ghlId} onChange={v=>set('ghlId',v)} placeholder="Auto-populated from GHL" />
         <div className="field full">
           <label>Inspection Notes / Project Detail</label>
           <textarea rows={3} value={customer.notes} onChange={e=>set('notes',e.target.value)} placeholder="Auto-template based on roof type — edit as needed" />
@@ -499,17 +503,32 @@ function StepReview({ customer, scope, photos, onGenerate, generating, genError 
   )
 }
 
-function SuccessScreen({ result, onReset }) {
-  const [copied, setCopied] = useState(false)
+function SuccessScreen({ result, onReset, onHome, onEdit }) {
+  const [copied, setCopied]       = useState(false)
+  const [sendState, setSendState] = useState('idle')  // idle | sending | sent | error
+  const [sendMsg, setSendMsg]     = useState('')
+
   function copy() {
     navigator.clipboard.writeText(result.shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1800)
   }
+  async function send() {
+    setSendState('sending'); setSendMsg('')
+    try {
+      const r = await fetch(`/api/proposal/${result.id}/send`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Send failed')
+      setSendState('sent')
+    } catch (e) { setSendState('error'); setSendMsg(e.message) }
+  }
+
   return (
     <main className="main">
       <div className="card">
         <div className="success-icon">✓</div>
-        <h2 className="success-title">Proposal generated!</h2>
-        <p className="success-sub">Three tier options ready for the customer. Share this link — they can review, pick a package, and sign on their phone.</p>
+        <h2 className="success-title">Proposal ready</h2>
+        <p className="success-sub">Review it below. When you're ready, send it to the customer — it is <strong>not</strong> sent automatically.</p>
 
         <div className="share-row">
           <input className="share-input" readOnly value={result.shareUrl} onClick={e => e.target.select()} />
@@ -521,11 +540,19 @@ function SuccessScreen({ result, onReset }) {
           <div><span>Tiers</span><strong>${(result.tiers?.good?.price||0).toLocaleString()} · ${(result.tiers?.better?.price||0).toLocaleString()} · ${(result.tiers?.best?.price||0).toLocaleString()}</strong></div>
         </div>
 
-        <div className="success-btns">
-          <a className="btn btn-outline" href={result.shareUrl} target="_blank" rel="noreferrer">👁 View as Customer</a>
-          <a className="btn btn-outline" href={`/api/proposal/${result.id}/pdf`} target="_blank" rel="noreferrer">⬇️ PDF</a>
-          <button className="btn btn-primary" onClick={onReset}>+ New Proposal</button>
+        <div className="success-actions">
+          <a className="sa-btn" href={result.shareUrl} target="_blank" rel="noreferrer"><span className="sa-ic">👁</span>View proposal</a>
+          <button className="sa-btn" onClick={send} disabled={sendState === 'sending' || sendState === 'sent'}>
+            <span className="sa-ic">📨</span>
+            {sendState === 'sending' ? 'Sending…' : sendState === 'sent' ? '✓ Sent to customer' : 'Send to customer'}
+          </button>
+          <a className="sa-btn" href={`/api/proposal/${result.id}/pdf`} target="_blank" rel="noreferrer"><span className="sa-ic">⬇️</span>Download PDF</a>
+          <button className="sa-btn" onClick={() => onEdit && onEdit(result)}><span className="sa-ic">✏️</span>Edit with AI</button>
+          <button className="sa-btn" onClick={onHome}><span className="sa-ic">🏠</span>Back to Home</button>
+          <button className="sa-btn sa-primary" onClick={onReset}><span className="sa-ic">＋</span>New Proposal</button>
         </div>
+
+        {sendState === 'error' && <div className="error-banner" style={{marginTop:14}}>⚠️ {sendMsg}</div>}
       </div>
     </main>
   )
@@ -1041,7 +1068,7 @@ function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full
   const lastQuery = useRef('')
 
   function fetchSuggestions(q) {
-    if (q.length < 4 || q === lastQuery.current) return
+    if (q.length < 3 || q === lastQuery.current) return
     lastQuery.current = q
     setLoading(true)
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=us&limit=5&q=${encodeURIComponent(q)}`
@@ -1072,7 +1099,7 @@ function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full
   function onInput(v) {
     onChange(v)
     if (debRef.current) clearTimeout(debRef.current)
-    debRef.current = setTimeout(() => fetchSuggestions(v), 350)
+    debRef.current = setTimeout(() => fetchSuggestions(v), 220)
   }
 
   function pick(item) {
@@ -1961,9 +1988,18 @@ function GlobalCSS() {
       .assist-input input:focus{border-color:#B01E17}
       .assist-input button{background:#B01E17;color:#fff;border:none;border-radius:8px;padding:0 16px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
       .assist-input button:disabled{background:#ccc;cursor:not-allowed}
+      /* ── Success screen control panel (FIX A) ── */
+      .success-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px}
+      .sa-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 12px;border-radius:11px;border:2px solid #E2E0DB;background:#fff;font-size:13px;font-weight:800;color:#0C1C38;cursor:pointer;font-family:inherit;text-decoration:none;transition:all .15s}
+      .sa-btn:hover:not(:disabled){border-color:#B01E17;color:#B01E17}
+      .sa-btn:disabled{opacity:.55;cursor:default}
+      .sa-btn.sa-primary{background:#B01E17;border-color:#B01E17;color:#fff}
+      .sa-btn.sa-primary:hover{background:#D4251C;color:#fff}
+      .sa-ic{font-size:16px}
       @media(max-width:780px){
         .kpi-row-6{grid-template-columns:1fr 1fr}
         .dash-grid{grid-template-columns:1fr}
+        .success-actions{grid-template-columns:1fr 1fr}
       }
     `}</style>
   )
