@@ -195,6 +195,7 @@ export default function Home() {
         <ProposalDetail proposal={openProposal} onClose={() => setOpenProposal(null)} onUpdated={(newId) => { setOpenProposal(null); }} />
       )}
 
+      <AssistantWidget />
       <GlobalCSS />
     </>
   )
@@ -1146,6 +1147,66 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   )
 }
 
+/* ─────────────── AI ASSISTANT WIDGET (v3.4) ─────────────── */
+function AssistantWidget() {
+  const [open, setOpen]       = useState(false)
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: "Hi! Ask me anything about your proposals — stats, hot leads, a specific customer…" },
+  ])
+  const [input, setInput]     = useState('')
+  const [busy, setBusy]       = useState(false)
+  const endRef = useRef(null)
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, open])
+
+  async function send() {
+    const text = input.trim()
+    if (!text || busy) return
+    const next = [...messages, { role: 'user', content: text }]
+    setMessages(next); setInput(''); setBusy(true)
+    try {
+      const r = await fetch('/api/assistant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next.filter(m => m.role !== 'system') }),
+      })
+      const d = await r.json()
+      setMessages(m => [...m, { role: 'assistant', content: r.ok ? (d.reply || '(no answer)') : ('⚠️ ' + (d.error || 'error')) }])
+    } catch (e) {
+      setMessages(m => [...m, { role: 'assistant', content: '⚠️ ' + e.message }])
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <button className="assist-fab" onClick={() => setOpen(o => !o)} title="AI Assistant">
+        {open ? '✕' : '💬'}
+      </button>
+      {open && (
+        <div className="assist-panel">
+          <div className="assist-head">🤖 AI Assistant</div>
+          <div className="assist-body">
+            {messages.map((m, i) => (
+              <div key={i} className={`assist-msg ${m.role}`}>{m.content}</div>
+            ))}
+            {busy && <div className="assist-msg assistant">…thinking</div>}
+            <div ref={endRef} />
+          </div>
+          <div className="assist-input">
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') send() }}
+              placeholder="Ask about your proposals…"
+              disabled={busy}
+            />
+            <button onClick={send} disabled={busy || !input.trim()}>Send</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 /* ─────────────── CUSTOMERS TAB (v3.3) ─────────────── */
 function CustomersTab({ onOpen }) {
   const [list, setList]   = useState(null)
@@ -1886,6 +1947,20 @@ function GlobalCSS() {
       /* ── Customers tab (v3.3) ── */
       .cust-prop{display:flex;align-items:center;gap:12px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:12px}
       .cust-prop:hover{background:#fff}
+      /* ── AI Assistant widget (v3.4) ── */
+      .assist-fab{position:fixed;bottom:22px;right:22px;width:56px;height:56px;border-radius:50%;border:none;background:#B01E17;color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 20px rgba(176,30,23,.4);z-index:900}
+      .assist-fab:hover{background:#D4251C}
+      .assist-panel{position:fixed;bottom:88px;right:22px;width:370px;max-width:calc(100vw - 44px);height:480px;max-height:calc(100vh - 130px);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden;z-index:900}
+      .assist-head{background:#0C1C38;color:#F0B429;font-weight:900;font-size:14px;padding:14px 18px;letter-spacing:.5px}
+      .assist-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:9px}
+      .assist-msg{font-size:13px;line-height:1.5;padding:9px 12px;border-radius:11px;max-width:85%;white-space:pre-wrap}
+      .assist-msg.user{background:#B01E17;color:#fff;align-self:flex-end;border-bottom-right-radius:3px}
+      .assist-msg.assistant{background:#F7F6F3;color:#1A1A2E;align-self:flex-start;border-bottom-left-radius:3px}
+      .assist-input{display:flex;gap:7px;padding:11px;border-top:2px solid #E2E0DB}
+      .assist-input input{flex:1;border:2px solid #E2E0DB;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
+      .assist-input input:focus{border-color:#B01E17}
+      .assist-input button{background:#B01E17;color:#fff;border:none;border-radius:8px;padding:0 16px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+      .assist-input button:disabled{background:#ccc;cursor:not-allowed}
       @media(max-width:780px){
         .kpi-row-6{grid-template-columns:1fr 1fr}
         .dash-grid{grid-template-columns:1fr}
