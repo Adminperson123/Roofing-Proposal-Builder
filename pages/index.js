@@ -32,7 +32,7 @@ const ALL_NOTES_TEMPLATES = Object.values(NOTES_TEMPLATES)
 
 export default function Home() {
   const router = useRouter()
-  const [tab, setTab]           = useState('builder')
+  const [tab, setTab]           = useState('dashboard')
   const [step, setStep]         = useState(0)
   const [customer, setCustomer] = useState(blankCustomer)
   const [scope, setScope]       = useState(blankScope)
@@ -162,9 +162,10 @@ export default function Home() {
       </nav>
 
       <div className="tabs">
+        <button className={`tab ${tab==='dashboard'?'on':''}`} onClick={() => setTab('dashboard')}>📊 Dashboard</button>
         <button className={`tab ${tab==='builder'?'on':''}`}   onClick={() => setTab('builder')}>📋 Build</button>
         <button className={`tab ${tab==='proposals'?'on':''}`} onClick={() => setTab('proposals')}>📁 Proposals</button>
-        <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>📊 Team</button>
+        <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>👥 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}  onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>
 
@@ -183,6 +184,7 @@ export default function Home() {
           />
         )
       )}
+      {tab === 'dashboard' && <OwnerDashboard onOpen={setOpenProposal} onGoBuild={() => { setTab('builder'); reset() }} />}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onOpen={setOpenProposal} />}
       {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && settings && <SettingsTab initial={settings} />}
@@ -1142,6 +1144,219 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   )
 }
 
+/* ─────────────── OWNER DASHBOARD (v3.2) ─────────────── */
+function OwnerDashboard({ onOpen, onGoBuild }) {
+  const [list, setList]   = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetch('/api/proposals')
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setList(d.proposals || []) })
+      .catch(e => setError(e.message))
+  }, [])
+
+  if (error) return <main className="main"><div className="card"><div className="error-banner">⚠️ {error}</div></div></main>
+  if (!list) return <main className="main"><div className="card"><div className="empty"><div className="empty-icon">⏳</div>Loading dashboard…</div></div></main>
+
+  if (!list.length) {
+    return (
+      <main className="main"><div className="card">
+        <h2 className="step-title">DASHBOARD</h2>
+        <div className="empty"><div className="empty-icon">📊</div><strong>No proposals yet</strong>
+          <div>Build your first proposal and your numbers will appear here.</div>
+          <button className="btn btn-primary" style={{marginTop:14}} onClick={onGoBuild}>+ Build a Proposal</button>
+        </div>
+      </div></main>
+    )
+  }
+
+  const m = computeDashboard(list)
+
+  return (
+    <main className="main">
+      <div className="card">
+        <h2 className="step-title">DASHBOARD</h2>
+        <p className="step-sub">Live overview of your proposal pipeline.</p>
+
+        {/* KPI strip */}
+        <div className="kpi-row kpi-row-6">
+          <KpiCard label="Revenue Closed"  value={repMoney(m.revenue)} accent />
+          <KpiCard label="Conversion"      value={repPct(m.conversion)} />
+          <KpiCard label="Open Pipeline"   value={repMoney(m.pipeline)} />
+          <KpiCard label="Avg Deal"        value={repMoney(Math.round(m.avgDeal))} />
+          <KpiCard label="Avg Close Time"  value={repDuration(m.avgTta != null ? Math.round(m.avgTta) : null)} />
+          <KpiCard label="Active Reps"     value={m.repCount} accent />
+        </div>
+
+        <div className="dash-grid">
+          {/* Conversion funnel */}
+          <div className="dash-panel">
+            <div className="dash-panel-title">CONVERSION FUNNEL</div>
+            {[['Sent', m.funnel.sent, '#16305E'], ['Viewed', m.funnel.viewed, '#D4960E'], ['Accepted', m.funnel.accepted, '#10B981']].map(([lbl, n, c]) => (
+              <div key={lbl} className="funnel-row">
+                <div className="funnel-lbl">{lbl}</div>
+                <div className="funnel-track">
+                  <div className="funnel-fill" style={{ width: `${m.funnel.sent ? Math.max(4, (n / m.funnel.sent) * 100) : 0}%`, background: c }}>{n}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tier mix */}
+          <div className="dash-panel">
+            <div className="dash-panel-title">ACCEPTED TIER MIX</div>
+            {m.accepted.length === 0 ? (
+              <div className="dash-muted">No accepted proposals yet.</div>
+            ) : (
+              [['good','Essential','#4A5568'], ['better','Performance','#B01E17'], ['best','Signature','#D4960E']].map(([k, lbl, c]) => (
+                <div key={k} className="funnel-row">
+                  <div className="funnel-lbl">{lbl}</div>
+                  <div className="funnel-track">
+                    <div className="funnel-fill" style={{ width: `${m.accepted.length ? Math.max(4, (m.tierMix[k] / m.accepted.length) * 100) : 0}%`, background: c }}>{m.tierMix[k]}</div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Hot leads */}
+          <div className="dash-panel">
+            <div className="dash-panel-title">🔥 HOT LEADS <span className="dash-hint">opened 2+ times, not yet signed</span></div>
+            {m.hotLeads.length === 0 ? (
+              <div className="dash-muted">No hot leads right now.</div>
+            ) : m.hotLeads.map(p => (
+              <div key={p.id} className="hot-lead" onClick={() => onOpen && onOpen(p)}>
+                <div>
+                  <div className="hot-name">{p.customer_name}</div>
+                  <div className="hot-meta">#{p.prop_num} · {p.rep_name || 'no rep'}</div>
+                </div>
+                <div className="hot-views">{p.view_count}× views</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Activity feed */}
+          <div className="dash-panel">
+            <div className="dash-panel-title">LIVE ACTIVITY</div>
+            {m.events.map((e, i) => (
+              <div key={i} className="activity-item">
+                <span className="activity-icon">{e.type === 'created' ? '📝' : e.type === 'viewed' ? '👁' : '✅'}</span>
+                <span className="activity-text">
+                  <strong>{e.p.customer_name}</strong> — {e.type === 'created' ? 'proposal created' : e.type === 'viewed' ? 'opened the proposal' : 'accepted ' + (e.p.selected_tier || '')}
+                </span>
+                <span className="activity-time">{relTime(e.t)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Leaderboard */}
+        <div className="dash-panel" style={{marginTop:16}}>
+          <div className="dash-panel-title">REP LEADERBOARD</div>
+          <table className="ptable">
+            <thead><tr><th>#</th><th>Rep</th><th>Sent</th><th>Closed</th><th>Revenue</th></tr></thead>
+            <tbody>
+              {m.leaderboard.map((r, i) => (
+                <tr key={r.rep}>
+                  <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
+                  <td className="ptable-name">{r.rep}</td>
+                  <td>{r.sent}</td>
+                  <td><strong>{r.accepted}</strong></td>
+                  <td><strong>{repMoney(r.revenue)}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+/** Crunch the proposals list into every dashboard metric. Pure function. */
+function computeDashboard(list) {
+  const isClosed = p => p.status === 'accepted' || p.status === 'signed'
+  const ticket = p => {
+    if (p.accepted_total) return Number(p.accepted_total) || 0
+    const t = p.tiers?.[p.selected_tier]
+    return t?.price ? Number(t.price) || 0 : 0
+  }
+  const estimate = p => {
+    const t = p.tiers?.better || p.tiers?.good
+    return t?.price ? Number(t.price) || 0 : 0
+  }
+
+  const accepted = list.filter(isClosed)
+  const viewed   = list.filter(p => p.viewed_at)
+  const openPipe = list.filter(p => p.status === 'sent' || p.status === 'viewed')
+
+  const revenue  = accepted.reduce((s, p) => s + ticket(p), 0)
+  const pipeline = openPipe.reduce((s, p) => s + estimate(p), 0)
+
+  const ttaHours = accepted
+    .map(p => {
+      if (!p.created_at || !p.accepted_at) return null
+      const ms = new Date(p.accepted_at).getTime() - new Date(p.created_at).getTime()
+      return ms >= 0 ? ms / 3600000 : null
+    })
+    .filter(x => x != null)
+
+  const reps = new Set(list.map(p => (p.rep_name || '').trim().toLowerCase()).filter(Boolean))
+
+  const hotLeads = list
+    .filter(p => (p.view_count || 0) >= 2 && !isClosed(p))
+    .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
+    .slice(0, 6)
+
+  const events = []
+  for (const p of list) {
+    if (p.created_at)  events.push({ t: p.created_at,  type: 'created',  p })
+    if (p.viewed_at)   events.push({ t: p.viewed_at,   type: 'viewed',   p })
+    if (p.accepted_at) events.push({ t: p.accepted_at, type: 'accepted', p })
+  }
+  events.sort((a, b) => new Date(b.t).getTime() - new Date(a.t).getTime())
+
+  const tierMix = { good: 0, better: 0, best: 0 }
+  for (const p of accepted) if (tierMix[p.selected_tier] != null) tierMix[p.selected_tier]++
+
+  const byRep = new Map()
+  for (const p of list) {
+    const key = (p.rep_name || '').trim() || 'Unassigned'
+    if (!byRep.has(key)) byRep.set(key, { rep: key, sent: 0, accepted: 0, revenue: 0 })
+    const r = byRep.get(key)
+    r.sent++
+    if (isClosed(p)) { r.accepted++; r.revenue += ticket(p) }
+  }
+  const leaderboard = [...byRep.values()].sort((a, b) => b.accepted - a.accepted || b.revenue - a.revenue)
+
+  return {
+    accepted, revenue, pipeline,
+    avgDeal:    accepted.length ? revenue / accepted.length : 0,
+    avgTta:     ttaHours.length ? ttaHours.reduce((a, b) => a + b, 0) / ttaHours.length : null,
+    conversion: list.length ? accepted.length / list.length : 0,
+    repCount:   reps.size,
+    hotLeads,
+    events:     events.slice(0, 12),
+    funnel:     { sent: list.length, viewed: viewed.length, accepted: accepted.length },
+    tierMix,
+    leaderboard,
+  }
+}
+
+/** Relative time like "3h ago" / "2d ago". */
+function relTime(iso) {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return mins + 'm ago'
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return hrs + 'h ago'
+  const days = Math.floor(hrs / 24)
+  return days + 'd ago'
+}
+
 /* ─────────────── TEAM / REPS TAB ─────────────── */
 function RepsTab() {
   const [range, setRange]     = useState('all')   // 30d | 90d | all
@@ -1531,6 +1746,31 @@ function GlobalCSS() {
       .kpi.accent .kpi-lbl{color:rgba(255,255,255,.55)}
       .rank{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#F7F6F3;border:2px solid #E2E0DB;font-weight:900;font-size:11px;color:#4A5568}
       .rank.gold{background:#D4960E;border-color:#D4960E;color:#fff}
+      /* ── Owner Dashboard (v3.2) ── */
+      .kpi-row-6{grid-template-columns:repeat(6,1fr)}
+      .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .dash-panel{background:#fff;border:2px solid #E2E0DB;border-radius:12px;padding:16px 18px}
+      .dash-panel-title{font-size:11px;font-weight:900;color:#4A5568;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:12px}
+      .dash-hint{font-weight:600;color:#9CA3AF;letter-spacing:.3px;text-transform:none}
+      .dash-muted{font-size:13px;color:#9CA3AF;padding:8px 0}
+      .funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+      .funnel-lbl{font-size:12px;font-weight:700;color:#4A5568;width:84px;flex-shrink:0}
+      .funnel-track{flex:1;background:#F7F6F3;border-radius:6px;overflow:hidden}
+      .funnel-fill{height:24px;border-radius:6px;color:#fff;font-size:12px;font-weight:900;display:flex;align-items:center;padding:0 9px;min-width:24px;transition:width .3s}
+      .hot-lead{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-radius:8px;background:#F7F6F3;margin-bottom:7px;cursor:pointer;border:2px solid transparent}
+      .hot-lead:hover{border-color:#B01E17}
+      .hot-name{font-size:13px;font-weight:800;color:#0C1C38}
+      .hot-meta{font-size:11px;color:#9CA3AF;margin-top:1px}
+      .hot-views{font-size:12px;font-weight:900;color:#B01E17;background:rgba(176,30,23,.1);padding:3px 9px;border-radius:20px;white-space:nowrap}
+      .activity-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EFEC;font-size:12px}
+      .activity-item:last-child{border-bottom:none}
+      .activity-icon{flex-shrink:0}
+      .activity-text{flex:1;color:#4A5568;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .activity-time{flex-shrink:0;color:#9CA3AF;font-weight:700;font-size:11px}
+      @media(max-width:780px){
+        .kpi-row-6{grid-template-columns:1fr 1fr}
+        .dash-grid{grid-template-columns:1fr}
+      }
     `}</style>
   )
 }

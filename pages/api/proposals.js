@@ -7,7 +7,7 @@ async function handler(req, res) {
   // Only show "head of chain" — proposals not superseded by a newer version.
   const { data, error } = await sb
     .from('proposals')
-    .select('id, prop_num, status, customer_name, customer_phone, customer_email, customer_address, rep_name, roof_type, squares, selected_tier, tiers, version_num, parent_id, superseded_by_id, view_count, created_at, viewed_at, accepted_at, expires_at, photo_urls')
+    .select('id, prop_num, status, customer_name, customer_phone, customer_email, customer_address, rep_name, roof_type, squares, selected_tier, tiers, accepted_total, version_num, parent_id, superseded_by_id, view_count, created_at, viewed_at, accepted_at, expires_at, photo_urls')
     .is('superseded_by_id', null)
     .order('created_at', { ascending: false })
     .limit(500)
