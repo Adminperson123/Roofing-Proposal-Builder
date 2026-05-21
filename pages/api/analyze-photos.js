@@ -16,13 +16,14 @@
  */
 
 import { analyzeRoofPhotos } from '../../lib/vision'
+import { requireAuth } from '../../lib/auth'
 
 export const config = {
   api: { bodyParser: { sizeLimit: '20mb' } },
   maxDuration: 60,
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
   const { images, context } = req.body || {}
@@ -44,3 +45,5 @@ export default async function handler(req, res) {
 
   return res.status(200).json({ ok: true, analysis: result.analysis })
 }
+
+export default requireAuth(handler)

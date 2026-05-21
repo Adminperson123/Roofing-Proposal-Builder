@@ -21,8 +21,9 @@
  */
 
 import { serverClient } from '../../lib/supabase'
+import { requireAuth } from '../../lib/auth'
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' })
 
   const window = ['30d', '90d', 'all'].includes(req.query.window) ? req.query.window : 'all'
@@ -115,3 +116,5 @@ function hoursBetween(startIso, endIso) {
   if (!Number.isFinite(ms) || ms < 0) return null
   return ms / 3600_000
 }
+
+export default requireAuth(handler)

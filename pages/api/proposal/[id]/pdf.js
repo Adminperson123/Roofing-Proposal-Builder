@@ -11,57 +11,66 @@ const CREAM = '#F7F6F3'
 const TEXT = '#1A1A2E'
 const MUTED = '#4A5568'
 const BORDER = '#E2E0DB'
-
-const s = StyleSheet.create({
-  page:        { padding: 40, fontSize: 10, color: TEXT, fontFamily: 'Helvetica' },
-  header:      { backgroundColor: NAVY, padding: 16, marginBottom: 16, borderBottomWidth: 3, borderBottomColor: CRIMSON, flexDirection: 'row', justifyContent: 'space-between' },
-  brand:       { color: GOLD, fontSize: 18, fontWeight: 'bold', letterSpacing: 1 },
-  brandSub:    { color: '#94a3b8', fontSize: 8, marginTop: 2 },
-  propNumLbl:  { color: '#94a3b8', fontSize: 8 },
-  propNum:     { color: '#fff', fontSize: 13, fontWeight: 'bold' },
-  propDate:    { color: '#94a3b8', fontSize: 9, marginTop: 2 },
-  validity:    { color: '#34d399', fontSize: 8, marginTop: 2 },
-  twoCol:      { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  box:         { flex: 1, backgroundColor: CREAM, padding: 12, borderRadius: 6 },
-  boxLbl:      { color: '#94a3b8', fontSize: 8, fontWeight: 'bold', marginBottom: 4, letterSpacing: 0.5 },
-  boxName:     { fontSize: 12, fontWeight: 'bold', marginBottom: 2 },
-  boxLine:     { fontSize: 9, color: MUTED, marginTop: 1 },
-  scope:       { backgroundColor: CREAM, padding: 12, borderRadius: 6, marginBottom: 14 },
-  scopeLbl:    { color: '#94a3b8', fontSize: 8, fontWeight: 'bold', marginBottom: 4, letterSpacing: 0.5 },
-  scopeLine:   { fontSize: 9, color: MUTED, marginBottom: 2 },
-  tierTitle:   { fontSize: 12, fontWeight: 'bold', color: NAVY, marginBottom: 8, letterSpacing: 0.5 },
-  tierGrid:    { flexDirection: 'row', gap: 6, marginBottom: 14 },
-  tierCard:    { flex: 1, borderWidth: 2, borderRadius: 8, padding: 10 },
-  tierBadge:   { color: '#fff', textAlign: 'center', padding: 4, fontSize: 9, fontWeight: 'bold', borderRadius: 4, marginBottom: 6 },
-  tierName:    { fontSize: 13, fontWeight: 'bold', marginBottom: 2 },
-  tierTag:     { fontSize: 8, color: MUTED, marginBottom: 6 },
-  tierPrice:   { fontSize: 18, fontWeight: 'bold', marginBottom: 2 },
-  tierPsf:     { fontSize: 8, color: MUTED, marginBottom: 6 },
-  tierMat:     { fontSize: 8, fontWeight: 'bold', color: TEXT, marginBottom: 1 },
-  tierBrand:   { fontSize: 8, color: MUTED, marginBottom: 4 },
-  tierWarr:    { fontSize: 8, fontWeight: 'bold', marginBottom: 6 },
-  tierFeat:    { fontSize: 7.5, color: MUTED, marginBottom: 2, lineHeight: 1.3 },
-  selectedBox: { backgroundColor: '#FEF3C7', padding: 10, borderRadius: 6, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: GOLD },
-  termsTitle:  { fontSize: 9, fontWeight: 'bold', color: NAVY, marginBottom: 4, letterSpacing: 0.5 },
-  terms:       { fontSize: 8, color: MUTED, lineHeight: 1.4 },
-  footer:      { position: 'absolute', bottom: 24, left: 40, right: 40, borderTopWidth: 0.5, borderTopColor: BORDER, paddingTop: 8, fontSize: 7.5, color: '#9CA3AF', textAlign: 'center' },
-})
-
 const TIER_COLORS = { good: '#4A5568', better: CRIMSON, best: GOLD }
 
-function ProposalPDF({ p }) {
-  const tiers = p.tiers || {}
-  const date = new Date(p.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
-  const expires = new Date(p.expires_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
-  const sel = p.selected_tier ? tiers[p.selected_tier] : null
+const s = StyleSheet.create({
+  page:        { padding: 36, fontSize: 10, color: TEXT, fontFamily: 'Helvetica' },
+  header:      { backgroundColor: NAVY, padding: 14, marginBottom: 14, borderBottomWidth: 3, borderBottomColor: CRIMSON, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  brandRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brand:       { color: GOLD, fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+  brandSub:    { color: '#94a3b8', fontSize: 7, marginTop: 2 },
+  propNumLbl:  { color: '#94a3b8', fontSize: 8 },
+  propNum:     { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  propDate:    { color: '#94a3b8', fontSize: 8, marginTop: 2 },
+  validity:    { color: '#34d399', fontSize: 7, marginTop: 2 },
+  twoCol:      { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  box:         { flex: 1, backgroundColor: CREAM, padding: 10, borderRadius: 5 },
+  boxLbl:      { color: '#94a3b8', fontSize: 7, fontWeight: 'bold', marginBottom: 3, letterSpacing: 0.5 },
+  boxName:     { fontSize: 11, fontWeight: 'bold', marginBottom: 2 },
+  boxLine:     { fontSize: 8, color: MUTED, marginTop: 1 },
+  cover:       { fontSize: 10, color: TEXT, lineHeight: 1.5, marginBottom: 12, paddingHorizontal: 4, fontStyle: 'italic' },
+  scope:       { backgroundColor: CREAM, padding: 10, borderRadius: 5, marginBottom: 12 },
+  scopeLbl:    { color: '#94a3b8', fontSize: 7, fontWeight: 'bold', marginBottom: 3, letterSpacing: 0.5 },
+  scopeLine:   { fontSize: 8, color: MUTED, marginBottom: 2 },
+  tierTitle:   { fontSize: 11, fontWeight: 'bold', color: NAVY, marginBottom: 6, letterSpacing: 0.5 },
+  tierGrid:    { flexDirection: 'row', gap: 5, marginBottom: 12 },
+  tierCard:    { flex: 1, borderWidth: 2, borderRadius: 6, padding: 8 },
+  tierBadge:   { color: '#fff', textAlign: 'center', padding: 3, fontSize: 8, fontWeight: 'bold', borderRadius: 3, marginBottom: 5 },
+  tierName:    { fontSize: 12, fontWeight: 'bold', marginBottom: 2 },
+  tierTag:     { fontSize: 7, color: MUTED, marginBottom: 4 },
+  tierPrice:   { fontSize: 16, fontWeight: 'bold', marginBottom: 1 },
+  tierPsf:     { fontSize: 7, color: MUTED, marginBottom: 4 },
+  tierMat:     { fontSize: 7.5, fontWeight: 'bold', color: TEXT, marginBottom: 1 },
+  tierBrand:   { fontSize: 7, color: MUTED, marginBottom: 3 },
+  tierWarr:    { fontSize: 7.5, fontWeight: 'bold', marginBottom: 5 },
+  tierFeat:    { fontSize: 7, color: MUTED, marginBottom: 1.5, lineHeight: 1.3 },
+  selectedBox: { backgroundColor: '#FEF3C7', padding: 8, borderRadius: 5, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: GOLD },
+  termsTitle:  { fontSize: 9, fontWeight: 'bold', color: NAVY, marginBottom: 3, letterSpacing: 0.5 },
+  terms:       { fontSize: 7.5, color: MUTED, lineHeight: 1.4 },
+  footer:      { position: 'absolute', bottom: 20, left: 36, right: 36, borderTopWidth: 0.5, borderTopColor: BORDER, paddingTop: 6, fontSize: 7, color: '#9CA3AF', textAlign: 'center' },
+})
 
+function fmtDate(iso) {
+  if (!iso) return '—'
+  try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) }
+  catch { return '—' }
+}
+
+function ProposalPDF({ p, logoUrl }) {
+  const tiers = p.tiers || {}
+  const date = fmtDate(p.created_at)
+  const expires = p.expires_at ? fmtDate(p.expires_at) : '—'
+  const sel = p.selected_tier ? tiers[p.selected_tier] : null
   return (
     <Document>
       <Page size="LETTER" style={s.page}>
         <View style={s.header}>
-          <View>
-            <Text style={s.brand}>GOOD PEOPLE ROOFING</Text>
-            <Text style={s.brandSub}>HOME IMPROVEMENT  |  CA Lic. C39 #1126880  |  (844) ROOFS-09</Text>
+          <View style={s.brandRow}>
+            {logoUrl ? <Image src={logoUrl} style={{ width: 40, height: 40, backgroundColor: '#fff', borderRadius: 4, padding: 2 }} /> : null}
+            <View>
+              <Text style={s.brand}>GOOD PEOPLE ROOFING</Text>
+              <Text style={s.brandSub}>HOME IMPROVEMENT  |  CA Lic. C39 #1126880  |  (844) ROOFS-09</Text>
+            </View>
           </View>
           <View>
             <Text style={s.propNumLbl}>PROPOSAL</Text>
@@ -87,6 +96,8 @@ function ProposalPDF({ p }) {
             {p.rep_name && <Text style={[s.boxLine, { color: CRIMSON, fontWeight: 'bold', marginTop: 2 }]}>Rep: {p.rep_name}</Text>}
           </View>
         </View>
+
+        {p.cover_letter && <Text style={s.cover}>{p.cover_letter}</Text>}
 
         <View style={s.scope}>
           <Text style={s.scopeLbl}>SCOPE OF WORK</Text>
@@ -122,7 +133,7 @@ function ProposalPDF({ p }) {
                 <Text style={s.tierMat}>{t.material}</Text>
                 <Text style={s.tierBrand}>{t.brand}</Text>
                 <Text style={[s.tierWarr, { color: c }]}>{t.warranty}</Text>
-                {(t.features || []).slice(0, 8).map((f, i) => (
+                {(t.features || []).map((f, i) => (
                   <Text key={i} style={s.tierFeat}>{`✓ ${f}`}</Text>
                 ))}
               </View>
@@ -152,12 +163,14 @@ export default async function handler(req, res) {
   if (error || !data) return res.status(404).json({ error: 'Not found' })
 
   try {
-    const stream = await renderToStream(<ProposalPDF p={data} />)
+    const base = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`
+    const logoUrl = `${base.replace(/\/$/, '')}/logo.png`
+    const stream = await renderToStream(<ProposalPDF p={data} logoUrl={logoUrl} />)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="GPR_${data.prop_num}.pdf"`)
     stream.pipe(res)
   } catch (err) {
     console.error('pdf error:', err)
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: 'PDF render failed' })
   }
 }

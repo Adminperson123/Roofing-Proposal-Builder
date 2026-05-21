@@ -1,6 +1,6 @@
 {
   "name": "gpr-proposal-builder",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,7 +11,7 @@
     "@react-pdf/renderer": "^4.1.6",
     "@supabase/supabase-js": "^2.45.4",
     "next": "^14.2.32",
-    "openai": "^4.104.0",
+    "openai": "^4.71.1",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   }

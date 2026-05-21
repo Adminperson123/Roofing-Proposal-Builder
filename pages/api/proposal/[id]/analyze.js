@@ -16,13 +16,14 @@
 
 import { serverClient } from '../../../../lib/supabase'
 import { analyzeRoofPhotos } from '../../../../lib/vision'
+import { requireAuth } from '../../../../lib/auth'
 
 export const config = {
   api: { bodyParser: { sizeLimit: '1mb' } },
   maxDuration: 60,  // vision calls can take 15-30s with multiple photos
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
   const { id } = req.query
@@ -88,3 +89,5 @@ export default async function handler(req, res) {
     analysis: result.analysis,
   })
 }
+
+export default requireAuth(handler)
