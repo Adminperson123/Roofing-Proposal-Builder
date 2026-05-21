@@ -165,6 +165,7 @@ export default function Home() {
         <button className={`tab ${tab==='dashboard'?'on':''}`} onClick={() => setTab('dashboard')}>📊 Dashboard</button>
         <button className={`tab ${tab==='builder'?'on':''}`}   onClick={() => setTab('builder')}>📋 Build</button>
         <button className={`tab ${tab==='proposals'?'on':''}`} onClick={() => setTab('proposals')}>📁 Proposals</button>
+        <button className={`tab ${tab==='customers'?'on':''}`} onClick={() => setTab('customers')}>🏠 Customers</button>
         <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>👥 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}  onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>
@@ -186,6 +187,7 @@ export default function Home() {
       )}
       {tab === 'dashboard' && <OwnerDashboard onOpen={setOpenProposal} onGoBuild={() => { setTab('builder'); reset() }} />}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onOpen={setOpenProposal} />}
+      {tab === 'customers' && <CustomersTab onOpen={setOpenProposal} />}
       {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && settings && <SettingsTab initial={settings} />}
 
@@ -1144,6 +1146,120 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   )
 }
 
+/* ─────────────── CUSTOMERS TAB (v3.3) ─────────────── */
+function CustomersTab({ onOpen }) {
+  const [list, setList]   = useState(null)
+  const [error, setError] = useState('')
+  const [q, setQ]         = useState('')
+  const [expanded, setExpanded] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/proposals')
+      .then(r => r.json())
+      .then(d => { if (d.error) throw new Error(d.error); setList(d.proposals || []) })
+      .catch(e => setError(e.message))
+  }, [])
+
+  if (error) return <main className="main"><div className="card"><div className="error-banner">⚠️ {error}</div></div></main>
+  if (!list) return <main className="main"><div className="card"><div className="empty"><div className="empty-icon">⏳</div>Loading customers…</div></div></main>
+
+  const customers = groupCustomers(list)
+  const filtered = q
+    ? customers.filter(c => (c.name + ' ' + c.email + ' ' + c.phone + ' ' + c.address).toLowerCase().includes(q.toLowerCase()))
+    : customers
+
+  return (
+    <main className="main">
+      <div className="card">
+        <div className="proposals-head">
+          <div><h2 className="step-title">CUSTOMERS</h2><p className="step-sub">Every customer, grouped across all their proposals.</p></div>
+          <input className="search" placeholder="Search customers…" value={q} onChange={e => setQ(e.target.value)} />
+        </div>
+
+        {!filtered.length ? (
+          <div className="empty"><div className="empty-icon">🏠</div><strong>No customers yet</strong><div>Customers appear here once you build proposals.</div></div>
+        ) : (
+          <table className="ptable">
+            <thead><tr><th>Customer</th><th>Proposals</th><th>Status</th><th>Closed Value</th><th>Last Activity</th></tr></thead>
+            <tbody>
+              {filtered.map(c => (
+                <CustomerRow key={c.key} c={c} expanded={expanded === c.key}
+                  onToggle={() => setExpanded(expanded === c.key ? null : c.key)} onOpen={onOpen} />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function CustomerRow({ c, expanded, onToggle, onOpen }) {
+  return (
+    <>
+      <tr onClick={onToggle} style={{cursor:'pointer'}}>
+        <td>
+          <div className="ptable-name">{expanded ? '▾ ' : '▸ '}{c.name}</div>
+          <div className="ptable-meta">{c.email || c.phone || c.address || ''}</div>
+        </td>
+        <td>{c.proposals.length}</td>
+        <td><StatusBadge status={c.latestStatus} /></td>
+        <td><strong>{c.closedValue ? repMoney(c.closedValue) : '—'}</strong></td>
+        <td className="meta">{c.lastActivity ? relTime(c.lastActivity) : '—'}</td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={5} style={{background:'#F7F6F3',padding:'10px 14px'}}>
+            {c.proposals.map(p => (
+              <div key={p.id} className="cust-prop" onClick={() => onOpen && onOpen(p)}>
+                <span className="mono">{p.prop_num}{p.version_num > 1 ? ` v${p.version_num}` : ''}</span>
+                <span>{p.roof_type === 'tile' ? '🏛️ Tile' : '🏠 Shingle'} · {p.squares}sq</span>
+                <StatusBadge status={p.status} />
+                <span className="meta">{new Date(p.created_at).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+/** Group the proposals list into unique customers (keyed by email → phone → name). */
+function groupCustomers(list) {
+  const isClosed = p => p.status === 'accepted' || p.status === 'signed'
+  const ticket = p => {
+    if (p.accepted_total) return Number(p.accepted_total) || 0
+    const t = p.tiers?.[p.selected_tier]
+    return t?.price ? Number(t.price) || 0 : 0
+  }
+  const byKey = new Map()
+  for (const p of list) {
+    const key = (p.customer_email || p.customer_phone || p.customer_name || 'unknown').trim().toLowerCase()
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        key, name: p.customer_name || 'Unknown', email: p.customer_email || '',
+        phone: p.customer_phone || '', address: p.customer_address || '',
+        proposals: [], closedValue: 0, lastActivity: null, latestStatus: 'sent',
+      })
+    }
+    const c = byKey.get(key)
+    c.proposals.push(p)
+    if (isClosed(p)) c.closedValue += ticket(p)
+    const stamps = [p.created_at, p.viewed_at, p.accepted_at].filter(Boolean)
+    for (const s of stamps) {
+      if (!c.lastActivity || new Date(s) > new Date(c.lastActivity)) c.lastActivity = s
+    }
+  }
+  // latest status = status of the customer's most-recently-created proposal
+  for (const c of byKey.values()) {
+    c.proposals.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    c.latestStatus = c.proposals[0]?.status || 'sent'
+  }
+  return [...byKey.values()].sort((a, b) =>
+    new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0))
+}
+
 /* ─────────────── OWNER DASHBOARD (v3.2) ─────────────── */
 function OwnerDashboard({ onOpen, onGoBuild }) {
   const [list, setList]   = useState(null)
@@ -1767,6 +1883,9 @@ function GlobalCSS() {
       .activity-icon{flex-shrink:0}
       .activity-text{flex:1;color:#4A5568;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .activity-time{flex-shrink:0;color:#9CA3AF;font-weight:700;font-size:11px}
+      /* ── Customers tab (v3.3) ── */
+      .cust-prop{display:flex;align-items:center;gap:12px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:12px}
+      .cust-prop:hover{background:#fff}
       @media(max-width:780px){
         .kpi-row-6{grid-template-columns:1fr 1fr}
         .dash-grid{grid-template-columns:1fr}
