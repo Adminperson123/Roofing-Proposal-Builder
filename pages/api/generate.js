@@ -9,7 +9,7 @@ async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { customer, scope } = req.body || {}
+    const { customer, scope, tierOverrides, visibleTiers } = req.body || {}
     // ---- validation ----
     if (!customer?.name || !customer?.address) return res.status(400).json({ error: 'customer.name and customer.address are required' })
     if (!scope?.roofType || !['shingle','tile'].includes(scope.roofType)) return res.status(400).json({ error: 'scope.roofType must be shingle|tile' })
@@ -28,6 +28,19 @@ async function handler(req, res) {
 
     const prices = calcPrices(scope, settings)
     const { tiers, coverLetter } = await generateTiers({ customer, scope, prices })
+
+    // v3.3 rep tier config — which packages to show + manual price overrides.
+    const ALLOWED = ['good', 'better', 'best']
+    let visible = Array.isArray(visibleTiers) ? visibleTiers.filter(t => ALLOWED.includes(t)) : []
+    if (!visible.length) visible = ALLOWED
+    tiers._visible = visible
+    if (tierOverrides && typeof tierOverrides === 'object') {
+      for (const k of ALLOWED) {
+        const o = Number(tierOverrides[k])
+        if (Number.isFinite(o) && o > 0 && tiers[k]) tiers[k].price = o
+      }
+    }
+
     const propNum = newPropNum()
 
     const { data, error } = await sb
@@ -51,6 +64,7 @@ async function handler(req, res) {
         layers: +scope.layers,
         decking_sheets: +scope.deckingSheets || 0,
         permit_amount: +scope.permit || 0,
+        solar_panels: +scope.solarPanels || 0,
         addons: scope.addons || [],
         tiers,
         cover_letter: coverLetter,

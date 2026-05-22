@@ -4,7 +4,7 @@ import { upsertContact, addContactTags, findPipelineStageByName, upsertOpportuni
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const { id } = req.query
-  const { tier, signature } = req.body || {}
+  const { tier, signature, addons } = req.body || {}
 
   if (!['good','better','best'].includes(tier)) {
     return res.status(400).json({ error: 'tier must be good|better|best' })
@@ -13,12 +13,26 @@ export default async function handler(req, res) {
   const sb = serverClient()
 
   // Idempotency — refuse if already accepted
-  const { data: cur } = await sb.from('proposals').select('status, selected_tier, accepted_at, superseded_by_id').eq('id', id).single()
+  const { data: cur } = await sb.from('proposals').select('status, selected_tier, accepted_at, superseded_by_id, tiers').eq('id', id).single()
   if (!cur) return res.status(404).json({ error: 'Not found' })
   if (cur.superseded_by_id) return res.status(409).json({ error: 'This proposal has been updated. Please open the latest version.' })
   if (cur.status === 'accepted') {
     return res.status(409).json({ error: 'Already accepted', selected_tier: cur.selected_tier, accepted_at: cur.accepted_at })
   }
+
+  // Resolve customer-selected change orders against the live settings catalog —
+  // never trust client-sent prices. Final total = tier base price + chosen adders.
+  const selectedIds = Array.isArray(addons) ? addons.map(String) : []
+  let acceptedAddons = []
+  if (selectedIds.length) {
+    const { data: st } = await sb.from('settings').select('payload').eq('id', 'global').single()
+    const catalog = Array.isArray(st?.payload?.changeOrders) ? st.payload.changeOrders : []
+    acceptedAddons = catalog
+      .filter(c => c && selectedIds.includes(String(c.id)) && Number(c.price) > 0)
+      .map(c => ({ id: String(c.id), label: String(c.label || ''), price: Number(c.price) || 0 }))
+  }
+  const tierPrice = Number(cur.tiers?.[tier]?.price) || 0
+  const acceptedTotal = tierPrice + acceptedAddons.reduce((s, a) => s + a.price, 0)
 
   const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim()
   const { data, error } = await sb
@@ -29,9 +43,11 @@ export default async function handler(req, res) {
       accepted_at: new Date().toISOString(),
       accepted_signature: signature || null,
       accepted_ip: ip || null,
+      accepted_addons: acceptedAddons,
+      accepted_total: acceptedTotal,
     })
     .eq('id', id)
-    .select('id, prop_num, customer_name, customer_phone, customer_email, customer_address, ghl_contact_id, selected_tier, tiers, accepted_total')
+    .select('id, prop_num, customer_name, customer_phone, customer_email, customer_address, ghl_contact_id, selected_tier, tiers, accepted_total, accepted_addons')
     .single()
 
   if (error) return res.status(500).json({ error: 'Accept failed' })

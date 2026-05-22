@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
+import { calcPrices, DEFAULT_SETTINGS } from '../lib/pricing'
 
 const ADDON_DEFS = [
   { id:'icewater',  label:'Ice & Water Shield Upgrade', icon:'🧊' },
@@ -14,7 +15,8 @@ const ADDON_DEFS = [
 ]
 
 const blankCustomer = { name:'', phone:'', email:'', address:'', city:'', state:'', zip:'', lat:null, lng:null, rep:'', ghlId:'', notes:'' }
-const blankScope    = { roofType:'shingle', tileSubtype:'flat', squares:14, pitch:5, stories:1, layers:1, deckingSheets:0, permit:0, addons:[] }
+const blankScope    = { roofType:'shingle', tileSubtype:'flat', squares:14, pitch:5, stories:1, layers:1, deckingSheets:0, permit:0, solarPanels:0, addons:[] }
+const blankTierConfig = { overrides: {}, visible: ['good','better','best'] }
 
 const REP_STORAGE_KEY = 'gpr_last_rep'
 
@@ -42,6 +44,7 @@ export default function Home() {
   const [result, setResult]     = useState(null)
   const [genError, setGenError] = useState('')
   const [openProposal, setOpenProposal] = useState(null)
+  const [tierConfig, setTierConfig] = useState(blankTierConfig)
 
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => setSettings(d.settings)).catch(() => {})
@@ -91,6 +94,7 @@ export default function Home() {
 
   function reset() {
     setStep(0); setCustomer(blankCustomer); setScope(blankScope); setPhotos([]); setResult(null); setGenError('')
+    setTierConfig(blankTierConfig)
   }
 
   async function generate() {
@@ -99,7 +103,7 @@ export default function Home() {
       // 1. Generate the proposal WITHOUT photos (keeps body under Vercel's 4.5MB limit)
       const r = await fetch('/api/generate', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ customer, scope }),
+        body: JSON.stringify({ customer, scope, tierOverrides: tierConfig.overrides, visibleTiers: tierConfig.visible }),
       })
       const ct = r.headers.get('content-type') || ''
       if (!ct.includes('application/json')) {
@@ -188,6 +192,8 @@ export default function Home() {
             generating={generating} genError={genError}
             onGenerate={generate}
             reps={settings?.reps || []}
+            settings={settings}
+            tierConfig={tierConfig} setTierConfig={setTierConfig}
           />
         )
       )}
@@ -208,7 +214,7 @@ export default function Home() {
   )
 }
 
-function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, generating, genError, onGenerate, reps }) {
+function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, photos, setPhotos, generating, genError, onGenerate, reps, settings, tierConfig, setTierConfig }) {
   const LABELS = ['Customer', 'Scope', 'Photos', 'Review']
   const canNext =
     step === 0 ? customer.name && customer.phone && customer.email && customer.address && customer.rep :
@@ -233,8 +239,8 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
         <div className="card">
           {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} reps={reps} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
-          {step === 2 && <StepPhotos   photos={photos}     setPhotos={setPhotos} />}
-          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} onGenerate={onGenerate} generating={generating} genError={genError} />}
+          {step === 2 && <StepPhotos   photos={photos}     setPhotos={setPhotos} scope={scope} setScope={setScope} />}
+          {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} onGenerate={onGenerate} generating={generating} genError={genError} settings={settings} tierConfig={tierConfig} setTierConfig={setTierConfig} />}
 
           <div className="step-nav">
             <button className="btn btn-back" disabled={step === 0} onClick={() => setStep(step - 1)}>← Back</button>
@@ -378,12 +384,29 @@ function StepScope({ scope, setScope }) {
           )
         })}
       </div>
+      {scope.addons.includes('solar') && (
+        <div className="solar-panels-box">
+          <Counter label="Solar Panels" hint="Per-panel rate set in Settings" value={scope.solarPanels || 0}
+            onMinus={()=>num('solarPanels',-1)} onPlus={()=>num('solarPanels',1)} onChange={v=>set('solarPanels',+v)} />
+        </div>
+      )}
     </div>
   )
 }
 
-function StepPhotos({ photos, setPhotos }) {
+// Parse a range value like "20-25" or "5/12 - 7/12" into one representative number.
+function midNumber(str) {
+  const nums = String(str || '').match(/\d+(?:\.\d+)?/g)
+  if (!nums || !nums.length) return null
+  const ns = nums.map(Number)
+  return Math.round(ns.reduce((a, b) => a + b, 0) / ns.length)
+}
+
+function StepPhotos({ photos, setPhotos, scope, setScope }) {
   const [busy, setBusy] = useState(false)
+  const [analyzing, setAnalyzing]     = useState(false)
+  const [analysis, setAnalysis]       = useState(null)
+  const [analysisErr, setAnalysisErr] = useState('')
   const fileRef = useRef(null)
 
   async function onFiles(fileList) {
@@ -414,10 +437,35 @@ function StepPhotos({ photos, setPhotos }) {
     setPhotos(p => p.filter((_, i) => i !== idx))
   }
 
+  async function analyze() {
+    if (!photos.length || analyzing) return
+    setAnalyzing(true); setAnalysisErr(''); setAnalysis(null)
+    try {
+      const images = photos.slice(0, 6).map(p => p.url).filter(u => typeof u === 'string' && u.startsWith('data:image/'))
+      if (!images.length) throw new Error('No analyzable photos to send.')
+      const r = await fetch('/api/analyze-photos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Analysis failed')
+      setAnalysis(d.analysis)
+    } catch (e) { setAnalysisErr(e.message) }
+    finally { setAnalyzing(false) }
+  }
+
+  const applySquares = () => { const n = midNumber(analysis?.squares_estimate?.value); if (n) setScope(s => ({ ...s, squares: n })) }
+  const applyPitch   = () => { const n = midNumber(analysis?.pitch_estimate?.value);   if (n) setScope(s => ({ ...s, pitch: n })) }
+  function applyAddons() {
+    const rec = (Array.isArray(analysis?.recommended_addons) ? analysis.recommended_addons : [])
+      .filter(id => ADDON_DEFS.some(a => a.id === id))
+    if (rec.length) setScope(s => ({ ...s, addons: [...new Set([...(s.addons || []), ...rec])] }))
+  }
+
   return (
     <div>
       <h2 className="step-title">PHOTOS (OPTIONAL)</h2>
-      <p className="step-sub">Snap roof photos on-site. They'll appear on the customer's proposal page — huge trust boost.</p>
+      <p className="step-sub">Snap roof photos on-site. They'll appear on the customer's proposal page — huge trust boost. Run AI analysis to pre-fill the scope step.</p>
 
       <div className="photo-drop" onClick={() => fileRef.current?.click()}>
         <div className="photo-drop-icon">📷</div>
@@ -443,9 +491,66 @@ function StepPhotos({ photos, setPhotos }) {
           ))}
         </div>
       )}
+
+      {photos.length > 0 && (
+        <button className="btn-analyze" onClick={analyze} disabled={analyzing}>
+          {analyzing ? '🔍 GPT-4o is analyzing your roof photos…' : '🤖 Analyze with AI'}
+        </button>
+      )}
+      {analysisErr && <div className="error-banner">⚠️ {analysisErr}</div>}
+      {analysis && (
+        <PhotoAnalysis analysis={analysis} onApplySquares={applySquares} onApplyPitch={applyPitch} onApplyAddons={applyAddons} />
+      )}
+
       <div className="photo-help">
         💡 Photos uploaded here are attached to the proposal automatically when you Generate.
       </div>
+    </div>
+  )
+}
+
+// AI roof-analysis result card (v3.4 photo step). Conservative — the rep reviews
+// and chooses whether to apply each suggestion to the scope.
+function PhotoAnalysis({ analysis, onApplySquares, onApplyPitch, onApplyAddons }) {
+  const a = analysis || {}
+  const conf = c => c ? <span className={`pa-conf pa-conf-${c}`}>{c}</span> : null
+  const addonLabel = id => (ADDON_DEFS.find(x => x.id === id)?.label) || id
+  const recAddons = (Array.isArray(a.recommended_addons) ? a.recommended_addons : [])
+    .filter(id => ADDON_DEFS.some(x => x.id === id))
+  return (
+    <div className="pa-card">
+      <div className="pa-head">
+        <span>🤖 AI ROOF ANALYSIS</span>
+        {typeof a.condition_score === 'number' && <span className="pa-score">Condition {a.condition_score}/10</span>}
+      </div>
+      <div className="pa-grid">
+        <div className="pa-est">
+          <div className="pa-est-lbl">SQUARES {conf(a.squares_estimate?.confidence)}</div>
+          <div className="pa-est-val">{a.squares_estimate?.value || '—'}</div>
+          {midNumber(a.squares_estimate?.value) != null && <button className="pa-apply" onClick={onApplySquares}>Use this</button>}
+        </div>
+        <div className="pa-est">
+          <div className="pa-est-lbl">PITCH {conf(a.pitch_estimate?.confidence)}</div>
+          <div className="pa-est-val">{a.pitch_estimate?.value || '—'}</div>
+          {midNumber(a.pitch_estimate?.value) != null && <button className="pa-apply" onClick={onApplyPitch}>Use this</button>}
+        </div>
+        <div className="pa-est">
+          <div className="pa-est-lbl">MATERIAL {conf(a.material_guess?.confidence)}</div>
+          <div className="pa-est-val pa-est-val-sm">{a.material_guess?.value || '—'}</div>
+        </div>
+      </div>
+      {a.damage_summary && <div className="pa-row"><strong>Damage:</strong> {a.damage_summary}</div>}
+      {Array.isArray(a.notable_features) && a.notable_features.length > 0 && (
+        <div className="pa-row"><strong>Notable:</strong> {a.notable_features.join(' · ')}</div>
+      )}
+      {a.notes && <div className="pa-row pa-notes">{a.notes}</div>}
+      {recAddons.length > 0 && (
+        <div className="pa-addons">
+          <div className="pa-row" style={{margin:0}}><strong>Suggested add-ons:</strong> {recAddons.map(addonLabel).join(', ')}</div>
+          <button className="pa-apply" onClick={onApplyAddons}>+ Add all to scope</button>
+        </div>
+      )}
+      <div className="pa-foot">⚠️ AI estimates are a starting point — confirm against your own measurements before generating.</div>
     </div>
   )
 }
@@ -463,11 +568,33 @@ function fileToBase64(file) {
   })
 }
 
-function StepReview({ customer, scope, photos, onGenerate, generating, genError }) {
+const TIER_NAMES = { good: 'Essential', better: 'Performance', best: 'Signature' }
+
+function StepReview({ customer, scope, photos, onGenerate, generating, genError, settings, tierConfig, setTierConfig }) {
+  const prices = calcPrices(scope, settings || DEFAULT_SETTINGS)
+  const visible = tierConfig?.visible || ['good','better','best']
+  const overrides = tierConfig?.overrides || {}
+
+  function toggleVisible(k) {
+    setTierConfig(c => {
+      const has = c.visible.includes(k)
+      if (has && c.visible.length === 1) return c   // keep at least one package visible
+      return { ...c, visible: has ? c.visible.filter(x => x !== k) : [...c.visible, k] }
+    })
+  }
+  function setOverride(k, v) {
+    setTierConfig(c => {
+      const next = { ...c.overrides }
+      if (v === '' || +v <= 0) delete next[k]
+      else next[k] = +v
+      return { ...c, overrides: next }
+    })
+  }
+
   return (
     <div>
       <h2 className="step-title">REVIEW & GENERATE</h2>
-      <p className="step-sub">Confirm the inputs. Hit Generate and the AI writes three customer-facing tier options. You'll get a shareable link.</p>
+      <p className="step-sub">Confirm the inputs, set prices and which packages to show, then generate — the AI writes the tier copy and you get a shareable link.</p>
 
       <div className="review-grid">
         <div className="review-box">
@@ -484,7 +611,7 @@ function StepReview({ customer, scope, photos, onGenerate, generating, genError 
           <div className="rb-line">{scope.squares} squares · pitch {scope.pitch}/12 · {scope.stories} stor{scope.stories>1?'ies':'y'}</div>
           <div className="rb-line">{scope.layers} layer{scope.layers>1?'s':''} tear-off · {scope.deckingSheets} bad sheets</div>
           <div className="rb-line">Permit: {scope.permit ? '$'+scope.permit : 'none'}</div>
-          <div className="rb-line" style={{marginTop:6}}>Add-ons: <strong>{scope.addons.length ? scope.addons.length + ' selected' : 'none'}</strong></div>
+          <div className="rb-line" style={{marginTop:6}}>Add-ons: <strong>{scope.addons.length ? scope.addons.length + ' selected' : 'none'}</strong>{scope.addons.includes('solar') && scope.solarPanels ? ` · ${scope.solarPanels} solar panels` : ''}</div>
           <div className="rb-line">Photos: <strong>{photos.length}</strong></div>
         </div>
       </div>
@@ -496,35 +623,49 @@ function StepReview({ customer, scope, photos, onGenerate, generating, genError 
         </div>
       )}
 
+      <div className="section-label" style={{marginTop:22}}>PACKAGE PRICING</div>
+      <p className="step-sub" style={{marginTop:-4,marginBottom:12}}>Override any price, or uncheck a package to hide it from the customer. The AI still writes the copy for every package shown.</p>
+      <div className="pricing-rows">
+        {['good','better','best'].map(k => {
+          const computed = prices[k].total
+          const on = visible.includes(k)
+          return (
+            <div key={k} className={`pricing-row ${on ? '' : 'off'}`}>
+              <button type="button" className={`pr-chk ${on ? 'on' : ''}`} onClick={() => toggleVisible(k)}
+                title={on ? 'Shown to the customer' : 'Hidden from the customer'}>{on ? '✓' : ''}</button>
+              <div className="pr-tier">{TIER_NAMES[k]}</div>
+              <div className="pr-computed">computed&nbsp;${computed.toLocaleString()}</div>
+              <div className="pr-override">
+                <span>$</span>
+                <input type="number" inputMode="numeric" placeholder={String(computed)}
+                  value={overrides[k] ?? ''} onChange={e => setOverride(k, e.target.value)} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {visible.length < 3 && (
+        <div className="pr-note">Customer will see {visible.length} package{visible.length>1?'s':''}: {visible.map(k => TIER_NAMES[k]).join(', ')}.</div>
+      )}
+
       {genError && <div className="error-banner">⚠️ {genError}</div>}
 
       <button className="btn-mega" onClick={onGenerate} disabled={generating}>
-        {generating ? '⏳ GPT-4 Turbo is writing your three tier options…' : '⚡ GENERATE PROPOSAL WITH AI'}
+        {generating ? '⏳ GPT-4 Turbo is writing your tier options…' : '⚡ GENERATE PROPOSAL WITH AI'}
       </button>
     </div>
   )
 }
 
 function SuccessScreen({ result, onReset, onHome, onEdit }) {
-  const [copied, setCopied]       = useState(false)
-  const [sendState, setSendState] = useState('idle')  // idle | sending | sent | error
-  const [sendMsg, setSendMsg]     = useState('')
-  const [ghlState, setGhlState]   = useState('idle')  // idle | syncing | done | error
-  const [ghlMsg, setGhlMsg]       = useState('')
+  const [copied, setCopied]     = useState(false)
+  const [showSend, setShowSend] = useState(false)
+  const [sent, setSent]         = useState(false)
+  const [ghlState, setGhlState] = useState('idle')  // idle | syncing | done | error
+  const [ghlMsg, setGhlMsg]     = useState('')
 
   function copy() {
     navigator.clipboard.writeText(result.shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1800)
-  }
-  async function send() {
-    setSendState('sending'); setSendMsg('')
-    try {
-      const r = await fetch(`/api/proposal/${result.id}/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
-      })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d.error || 'Send failed')
-      setSendState('sent')
-    } catch (e) { setSendState('error'); setSendMsg(e.message) }
   }
   async function syncGhl() {
     setGhlState('syncing'); setGhlMsg('')
@@ -558,9 +699,9 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
         <div className="success-actions">
           <a className="sa-btn" href={result.shareUrl} target="_blank" rel="noreferrer"><span className="sa-ic">👁</span>View proposal</a>
           <a className="sa-btn" href={`/present/${result.id}`} target="_blank" rel="noreferrer"><span className="sa-ic">🖥</span>Presentation mode</a>
-          <button className="sa-btn" onClick={send} disabled={sendState === 'sending' || sendState === 'sent'}>
+          <button className="sa-btn" onClick={() => setShowSend(true)}>
             <span className="sa-ic">📨</span>
-            {sendState === 'sending' ? 'Sending…' : sendState === 'sent' ? '✓ Sent to customer' : 'Send to customer'}
+            {sent ? '✓ Sent — send again' : 'Send to customer'}
           </button>
           <a className="sa-btn" href={`/api/proposal/${result.id}/pdf`} target="_blank" rel="noreferrer"><span className="sa-ic">⬇️</span>Download PDF</a>
           <button className="sa-btn" onClick={() => onEdit && onEdit(result)}><span className="sa-ic">✏️</span>Edit with AI</button>
@@ -572,10 +713,13 @@ function SuccessScreen({ result, onReset, onHome, onEdit }) {
           <button className="sa-btn sa-primary" onClick={onReset}><span className="sa-ic">＋</span>New Proposal</button>
         </div>
 
-        {sendState === 'error' && <div className="error-banner" style={{marginTop:14}}>⚠️ {sendMsg}</div>}
         {ghlState === 'error' && <div className="error-banner" style={{marginTop:14}}>⚠️ {ghlMsg}</div>}
         {ghlState === 'done' && <div className="ok-banner" style={{marginTop:14}}>🔗 {ghlMsg}</div>}
       </div>
+
+      {showSend && (
+        <SendModal proposalId={result.id} onClose={() => setShowSend(false)} onSent={() => setSent(true)} />
+      )}
     </main>
   )
 }
@@ -697,6 +841,9 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
   const [showField, setShowField] = useState(false)
   const [inspections, setInspections] = useState([])
   const [creatingInsp, setCreatingInsp] = useState(false)
+  const [showSend, setShowSend] = useState(false)
+  const [status, setStatus] = useState(proposal.status)
+  const [statusBusy, setStatusBusy] = useState(false)
 
   // Re-fetch the proposal to get a fresh field_token if we didn't get one from the list.
   useEffect(() => {
@@ -733,6 +880,20 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
       window.location.href = `/inspection/${d.inspection.id}`
     } catch (e) { alert(e.message) }
     finally { setCreatingInsp(false) }
+  }
+
+  async function changeStatus(next) {
+    setStatusBusy(true)
+    try {
+      const r = await fetch(`/api/proposal/${proposal.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Update failed')
+      setStatus(next)
+    } catch (e) { alert(e.message) }
+    finally { setStatusBusy(false) }
   }
 
   async function sendChat() {
@@ -799,7 +960,7 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
         <div className="detail-body">
           <div className="detail-summary">
             <div><span>Roof</span><strong>{proposal.roof_type === 'tile' ? 'Tile' : 'Shingle'} · {proposal.squares} sq</strong></div>
-            <div><span>Status</span><strong><StatusBadge status={proposal.status} /></strong></div>
+            <div><span>Status</span><strong><StatusBadge status={status} /></strong></div>
             <div><span>Views</span><strong>{proposal.view_count || 0}</strong></div>
             <div><span>Selected</span><strong>{proposal.selected_tier ? <TierPill tier={proposal.selected_tier} tiers={proposal.tiers}/> : '—'}</strong></div>
           </div>
@@ -809,6 +970,18 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
             <button className="btn btn-outline btn-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); alert('Copied') }}>Copy</button>
             <a className="btn btn-outline btn-sm" href={shareUrl} target="_blank" rel="noreferrer">Open</a>
           </div>
+
+          <button className="btn btn-primary" style={{width:'100%'}} onClick={() => setShowSend(true)}>📨 Send to customer (text / email)</button>
+
+          {status === 'expired' ? (
+            <button className="btn btn-outline" style={{width:'100%'}} disabled={statusBusy} onClick={() => changeStatus('sent')}>
+              {statusBusy ? 'Updating…' : '↩ Reactivate — customer is moving forward again'}
+            </button>
+          ) : (status !== 'accepted' && status !== 'signed') && (
+            <button className="btn btn-back" style={{width:'100%'}} disabled={statusBusy} onClick={() => changeStatus('expired')}>
+              {statusBusy ? 'Updating…' : '✕ Mark as not moving forward'}
+            </button>
+          )}
 
           <div className="field-link-block">
             <div className="field-link-head">
@@ -929,6 +1102,10 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
           </div>
         </div>
       </div>
+
+      {showSend && (
+        <SendModal proposalId={proposal.id} onClose={() => setShowSend(false)} onSent={() => {}} />
+      )}
     </div>
   )
 }
@@ -961,10 +1138,37 @@ function PatchPreview({ patch }) {
   )
 }
 
+// Starter change-order list for the Settings editor — labels only; the admin
+// sets the price on each. A change order needs a price > 0 to show to customers.
+const STARTER_CHANGE_ORDERS = [
+  { label: 'Ridge vent — full ridge',        price: 0, description: 'Continuous ridge ventilation to cool the attic and extend shingle life.' },
+  { label: 'Ice & water shield — full roof', price: 0, description: 'Upgrade from code-minimum coverage to a full-roof waterproof membrane.' },
+  { label: 'Seamless gutter replacement',    price: 0, description: 'Remove and replace gutters and downspouts with new seamless aluminum.' },
+  { label: 'Designer shingle upgrade',       price: 0, description: 'Step up to a designer-profile architectural shingle.' },
+  { label: 'Solar panel detach & reset',     price: 0, description: 'Licensed detach and re-set of existing rooftop solar panels.' },
+]
+
 function SettingsTab({ initial }) {
   const [settings, setSettings] = useState(initial)
   const [savedAt, setSavedAt] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  // Backfill newer settings keys so the editors below stay controlled even for
+  // older settings rows saved before those keys existed.
+  useEffect(() => {
+    setSettings(s => {
+      let next = s
+      if (!next.messageTemplates) next = { ...next, messageTemplates: { ...DEFAULT_TEMPLATES } }
+      if (!Array.isArray(next.changeOrders)) next = { ...next, changeOrders: [] }
+      return next
+    })
+  }, [])
+
+  const genCoId  = () => 'co_' + Math.random().toString(36).slice(2, 9)
+  const updateCO = (i, patch) => setSettings(s => ({ ...s, changeOrders: (s.changeOrders || []).map((c, j) => j === i ? { ...c, ...patch } : c) }))
+  const addCO    = () => setSettings(s => ({ ...s, changeOrders: [...(s.changeOrders || []), { id: genCoId(), label: '', price: 0, description: '' }] }))
+  const removeCO = i => setSettings(s => ({ ...s, changeOrders: (s.changeOrders || []).filter((_, j) => j !== i) }))
+  const loadStarterCOs = () => setSettings(s => ({ ...s, changeOrders: STARTER_CHANGE_ORDERS.map(c => ({ ...c, id: genCoId() })) }))
 
   function set(path, val) {
     const next = JSON.parse(JSON.stringify(settings))
@@ -1018,6 +1222,7 @@ function SettingsTab({ initial }) {
           {ADDON_DEFS.map(a => (
             <SettingRow key={a.id} label={a.label} value={settings.addons[a.id]} onChange={v=>set(`addons.${a.id}`,+v)} />
           ))}
+          <SettingRow label="Solar — per-panel rate ($0 = use flat price above)" value={settings.solarPerPanel || 0} onChange={v=>set('solarPerPanel',+v)} />
         </SettingSection>
 
         <SettingSection title="👤 Sales Rep Roster">
@@ -1047,6 +1252,43 @@ function SettingsTab({ initial }) {
           <SettingRow label="APR (%)"        value={settings.financing?.apr || 7.99}   onChange={v=>set('financing.apr',+v)} />
           <SettingRow label="Term (months)"  value={settings.financing?.termMonths || 120} onChange={v=>set('financing.termMonths',+v)} />
         </SettingSection>
+
+        <SettingSection title="✉️ Message Templates (used by the Send modal)">
+          <div style={{gridColumn:'1/-1',display:'flex',flexDirection:'column',gap:10}}>
+            <div className="tpl-hint">Placeholders auto-fill per customer: <code>{'{{firstName}}'}</code> <code>{'{{rep}}'}</code> <code>{'{{propNum}}'}</code> <code>{'{{link}}'}</code></div>
+            <TplField label="SMS message"   rows={4} value={settings.messageTemplates?.smsBody || ''}      onChange={v=>set('messageTemplates.smsBody', v)} />
+            <TplField label="Email subject" rows={1} value={settings.messageTemplates?.emailSubject || ''} onChange={v=>set('messageTemplates.emailSubject', v)} />
+            <TplField label="Email body"    rows={7} value={settings.messageTemplates?.emailBody || ''}    onChange={v=>set('messageTemplates.emailBody', v)} />
+          </div>
+        </SettingSection>
+
+        <SettingSection title="🧾 Change Orders (customer-toggleable on the proposal page)">
+          <div style={{gridColumn:'1/-1',display:'flex',flexDirection:'column',gap:10}}>
+            <div className="tpl-hint">Optional upgrades a customer can add to their own proposal. Only items priced above $0 appear to customers.</div>
+            {(settings.changeOrders || []).map((co, i) => (
+              <div key={co.id || i} className="co-row">
+                <div className="co-row-top">
+                  <input className="co-label" value={co.label || ''} placeholder="Upgrade name"
+                    onChange={e => updateCO(i, { label: e.target.value })} />
+                  <div className="co-price">
+                    <span>$</span>
+                    <input type="number" value={co.price ?? ''} placeholder="0"
+                      onChange={e => updateCO(i, { price: +e.target.value || 0 })} />
+                  </div>
+                  <button className="btn-icon danger" onClick={() => removeCO(i)} title="Remove">🗑</button>
+                </div>
+                <input className="co-desc" value={co.description || ''} placeholder="Short description shown to the customer — optional"
+                  onChange={e => updateCO(i, { description: e.target.value })} />
+              </div>
+            ))}
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <button className="btn btn-outline btn-sm" onClick={addCO}>+ Add change order</button>
+              {!(settings.changeOrders || []).length && (
+                <button className="btn btn-outline btn-sm" onClick={loadStarterCOs}>Load starter list</button>
+              )}
+            </div>
+          </div>
+        </SettingSection>
       </div>
     </main>
   )
@@ -1065,6 +1307,16 @@ function SettingRow({ label, value, onChange }) {
     <div className="setting-row">
       <div className="setting-label">{label}</div>
       <input type="number" value={value} onChange={e=>onChange(e.target.value)} />
+    </div>
+  )
+}
+function TplField({ label, value, onChange, rows }) {
+  return (
+    <div className="field" style={{width:'100%'}}>
+      <label>{label}</label>
+      {rows > 1
+        ? <textarea rows={rows} value={value} onChange={e=>onChange(e.target.value)} />
+        : <input value={value} onChange={e=>onChange(e.target.value)} />}
     </div>
   )
 }
@@ -1196,6 +1448,200 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   )
 }
 
+/* ─────────────── SEND MODAL (v3.7 send + v3.7.1 language toggle) ─────────────── */
+const DEFAULT_TEMPLATES = {
+  smsBody: "Hi {{firstName}}, this is {{rep}} at Good People Roofing. Here's your roofing proposal #{{propNum}}: {{link}}\n\nIt has three options to choose from — reply with any questions.",
+  emailSubject: "Your Good People Roofing proposal #{{propNum}}",
+  emailBody: "Hi {{firstName}},\n\nThank you for the opportunity to earn your business. Your personalized roofing proposal is ready — it walks through three package options, all backed by the same crew and the same workmanship guarantee.\n\nView your proposal here:\n{{link}}\n\nReply to this email or call us any time with questions.\n\n— {{rep}}, Good People Roofing",
+}
+
+function fillTemplate(tpl, vars) {
+  return String(tpl || '').replace(/\{\{(\w+)\}\}/g, (_, k) => (k in vars ? vars[k] : `{{${k}}}`))
+}
+
+function ChannelToggle({ on, onClick, icon, label, sub, disabled }) {
+  return (
+    <button type="button" className={`send-channel ${on ? 'on' : ''}`} onClick={onClick} disabled={disabled}>
+      <span className={`send-channel-chk ${on ? 'on' : ''}`}>{on ? '✓' : ''}</span>
+      <span className="send-channel-ic">{icon}</span>
+      <span className="send-channel-txt">
+        <span className="send-channel-label">{label}</span>
+        <span className="send-channel-sub">{sub}</span>
+      </span>
+    </button>
+  )
+}
+
+function SendModal({ proposalId, onClose, onSent }) {
+  const [p, setP]                 = useState(null)
+  const [loadErr, setLoadErr]     = useState('')
+  const [channels, setChannels]   = useState([])
+  const [sms, setSms]             = useState('')
+  const [subject, setSubject]     = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [lang, setLang]           = useState('en')        // en | es
+  const [enSnapshot, setEnSnapshot] = useState(null)      // English copy, kept so the rep can toggle back
+  const [translating, setTranslating] = useState(false)
+  const [busy, setBusy]           = useState(false)
+  const [result, setResult]       = useState(null)
+  const [err, setErr]             = useState('')
+
+  // Load the proposal + settings templates, then seed the editable message fields.
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetch(`/api/proposal/${proposalId}`).then(r => r.json()),
+      fetch('/api/settings').then(r => r.json()).catch(() => ({})),
+    ]).then(([prop, st]) => {
+      if (cancelled) return
+      if (!prop || prop.error) { setLoadErr('Could not load this proposal.'); return }
+      setP(prop)
+      const base = typeof window !== 'undefined' ? location.origin : ''
+      const vars = {
+        firstName: (prop.customer_name || '').split(/\s+/)[0] || 'there',
+        rep: prop.rep_name || 'Good People Roofing',
+        propNum: prop.prop_num || '',
+        link: `${base}/p/${prop.id}`,
+      }
+      const tpl = st?.settings?.messageTemplates || {}
+      setSms(fillTemplate(tpl.smsBody || DEFAULT_TEMPLATES.smsBody, vars))
+      setSubject(fillTemplate(tpl.emailSubject || DEFAULT_TEMPLATES.emailSubject, vars))
+      setEmailBody(fillTemplate(tpl.emailBody || DEFAULT_TEMPLATES.emailBody, vars))
+      const ch = []
+      if (prop.customer_phone) ch.push('sms')
+      if (prop.customer_email) ch.push('email')
+      setChannels(ch.length ? ch : ['sms'])
+    }).catch(() => { if (!cancelled) setLoadErr('Could not load this proposal.') })
+    return () => { cancelled = true }
+  }, [proposalId])
+
+  const toggleChannel = c => setChannels(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c])
+
+  async function setLanguage(next) {
+    if (next === lang || translating) return
+    if (next === 'en') {
+      if (enSnapshot) { setSms(enSnapshot.sms); setSubject(enSnapshot.subject); setEmailBody(enSnapshot.emailBody) }
+      setLang('en'); return
+    }
+    // → Spanish: snapshot the English copy first so the toggle is reversible.
+    setTranslating(true); setErr('')
+    try {
+      const snap = enSnapshot || { sms, subject, emailBody }
+      if (!enSnapshot) setEnSnapshot(snap)
+      const r = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts: [snap.sms, snap.subject, snap.emailBody] }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Translation failed')
+      const [tSms, tSub, tBody] = d.texts || []
+      setSms(tSms ?? sms); setSubject(tSub ?? subject); setEmailBody(tBody ?? emailBody)
+      setLang('es')
+    } catch (e) { setErr(e.message) }
+    finally { setTranslating(false) }
+  }
+
+  async function send() {
+    if (!channels.length) { setErr('Pick at least one channel.'); return }
+    setBusy(true); setErr(''); setResult(null)
+    try {
+      const r = await fetch(`/api/proposal/${proposalId}/send`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels, smsMessage: sms, emailSubject: subject, emailBody }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Send failed')
+      setResult(d)
+      onSent && onSent(d)
+    } catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="detail-overlay" onClick={onClose}>
+      <div className="detail-panel" onClick={e => e.stopPropagation()} style={{maxWidth:620}}>
+        <div className="detail-head">
+          <div>
+            <div className="meta" style={{fontSize:11,fontWeight:900,letterSpacing:1.2}}>SEND PROPOSAL</div>
+            <h2 style={{fontSize:22,fontWeight:900,color:'var(--navy)',margin:'4px 0'}}>{p?.customer_name || '…'}</h2>
+            <div className="meta">{p ? `Proposal ${p.prop_num}` : 'Loading…'}</div>
+          </div>
+          <button className="btn-icon" onClick={onClose} style={{fontSize:20}}>×</button>
+        </div>
+
+        <div className="detail-body">
+          {loadErr && <div className="error-banner">⚠️ {loadErr}</div>}
+
+          {p && !result && (
+            <>
+              <div className="send-channels">
+                <ChannelToggle on={channels.includes('sms')} onClick={() => toggleChannel('sms')}
+                  icon="💬" label="Text message" sub={p.customer_phone || 'No phone on file'} disabled={!p.customer_phone} />
+                <ChannelToggle on={channels.includes('email')} onClick={() => toggleChannel('email')}
+                  icon="✉️" label="Email" sub={p.customer_email || 'No email on file'} disabled={!p.customer_email} />
+              </div>
+
+              <div className="send-lang">
+                <span className="send-lang-lbl">Language</span>
+                <div className="send-lang-toggle">
+                  <button className={lang === 'en' ? 'on' : ''} onClick={() => setLanguage('en')} disabled={translating}>English</button>
+                  <button className={lang === 'es' ? 'on' : ''} onClick={() => setLanguage('es')} disabled={translating}>
+                    {translating ? 'Translating…' : 'Español'}
+                  </button>
+                </div>
+              </div>
+
+              {channels.includes('sms') && (
+                <div className="field">
+                  <label>Text message</label>
+                  <textarea rows={4} value={sms} onChange={e => setSms(e.target.value)} />
+                </div>
+              )}
+              {channels.includes('email') && (
+                <>
+                  <div className="field">
+                    <label>Email subject</label>
+                    <input value={subject} onChange={e => setSubject(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label>Email body</label>
+                    <textarea rows={7} value={emailBody} onChange={e => setEmailBody(e.target.value)} />
+                  </div>
+                </>
+              )}
+
+              {err && <div className="error-banner">⚠️ {err}</div>}
+
+              <div className="step-nav" style={{marginTop:0}}>
+                <button className="btn btn-back" onClick={onClose}>Cancel</button>
+                <button className="btn btn-primary" onClick={send} disabled={busy || !channels.length}>
+                  {busy ? 'Sending…' : `📨 Send ${channels.length === 2 ? 'text + email' : channels[0] === 'email' ? 'email' : 'text'}`}
+                </button>
+              </div>
+            </>
+          )}
+
+          {result && (
+            <div className="send-result">
+              <div className="success-icon" style={{width:60,height:60,fontSize:30,margin:'0 auto 14px'}}>✓</div>
+              <div style={{textAlign:'center',fontWeight:900,fontSize:18,color:'var(--navy)'}}>Sent to {p?.customer_name}</div>
+              <div className="meta" style={{textAlign:'center',marginTop:6}}>
+                Delivered via {(result.sent || []).map(c => c === 'sms' ? 'text' : 'email').join(' + ') || '—'}.
+              </div>
+              {result.results && Object.entries(result.results).some(([, v]) => !v.ok) && (
+                <div className="error-banner" style={{marginTop:12}}>
+                  {Object.entries(result.results).filter(([, v]) => !v.ok).map(([k, v]) => `${k}: ${v.error}`).join(' · ')}
+                </div>
+              )}
+              <button className="btn btn-primary" style={{marginTop:16,width:'100%'}} onClick={onClose}>Done</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ─────────────── AI ASSISTANT WIDGET (v3.4) ─────────────── */
 function AssistantWidget() {
   const [open, setOpen]       = useState(false)
@@ -1318,47 +1764,60 @@ function InspectionsTab() {
         ) : !list.length ? (
           <div className="empty"><div className="empty-icon">🔍</div><strong>No inspections yet</strong><div>Tap "+ New Inspection" to start a step-by-step site assessment.</div></div>
         ) : (
-          <table className="ptable" style={{marginTop:16}}>
-            <thead><tr><th>#</th><th>Customer</th><th>Status</th><th>Created</th><th></th></tr></thead>
-            <tbody>
-              {list.map(ins => (
-                <tr key={ins.id}>
-                  <td className="mono">{ins.inspection_num}</td>
-                  <td><div className="ptable-name">{ins.customer_name}</div><div className="ptable-meta">{ins.customer_address}</div></td>
-                  <td><span className={`status-pill insp-pill-${ins.status || 'draft'}`}>{(ins.status || 'draft').toUpperCase()}</span></td>
-                  <td className="meta">{new Date(ins.created_at).toLocaleDateString()}</td>
-                  <td style={{whiteSpace:'nowrap'}}>
-                    <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}`} target="_blank" rel="noreferrer">{ins.status === 'submitted' ? 'View' : 'Continue'}</a>
-                    {ins.status === 'submitted' && <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}/pdf`} target="_blank" rel="noreferrer" style={{marginLeft:6}}>📄 Report</a>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="ptable-wrap">
+            <table className="ptable" style={{marginTop:16}}>
+              <thead><tr><th>#</th><th>Customer</th><th>Status</th><th>Created</th><th></th></tr></thead>
+              <tbody>
+                {list.map(ins => (
+                  <tr key={ins.id}>
+                    <td className="mono">{ins.inspection_num}</td>
+                    <td><div className="ptable-name">{ins.customer_name}</div><div className="ptable-meta">{ins.customer_address}</div></td>
+                    <td><span className={`status-pill insp-pill-${ins.status || 'draft'}`}>{(ins.status || 'draft').toUpperCase()}</span></td>
+                    <td className="meta">{new Date(ins.created_at).toLocaleDateString()}</td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}`} target="_blank" rel="noreferrer">{ins.status === 'submitted' ? 'View' : 'Continue'}</a>
+                      {ins.status === 'submitted' && <a className="btn btn-outline btn-sm" href={`/inspection/${ins.id}/pdf`} target="_blank" rel="noreferrer" style={{marginLeft:6}}>📄 Report</a>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </main>
   )
 }
 
-/* ─────────────── CUSTOMERS TAB (v3.3) ─────────────── */
+/* ─────────────── CUSTOMERS TAB (v3.3 · v3.6 timelines) ─────────────── */
 function CustomersTab({ onOpen }) {
-  const [list, setList]   = useState(null)
-  const [error, setError] = useState('')
-  const [q, setQ]         = useState('')
-  const [expanded, setExpanded] = useState(null)
+  const [list, setList]     = useState(null)
+  const [tokens, setTokens] = useState([])
+  const [error, setError]   = useState('')
+  const [q, setQ]           = useState('')
+  const [expanded, setExpanded]       = useState(null)
+  const [timelineFor, setTimelineFor] = useState(null)
 
+  function loadTokens() {
+    fetch('/api/customer-tokens')
+      .then(r => r.json())
+      .then(d => setTokens(d.tokens || []))
+      .catch(() => {})
+  }
   useEffect(() => {
     fetch('/api/proposals')
       .then(r => r.json())
       .then(d => { if (d.error) throw new Error(d.error); setList(d.proposals || []) })
       .catch(e => setError(e.message))
+    loadTokens()
   }, [])
 
   if (error) return <main className="main"><div className="card"><div className="error-banner">⚠️ {error}</div></div></main>
   if (!list) return <main className="main"><div className="card"><div className="empty"><div className="empty-icon">⏳</div>Loading customers…</div></div></main>
 
   const customers = groupCustomers(list)
+  const tokenByKey = {}
+  for (const t of tokens) if (t.customer_key) tokenByKey[t.customer_key] = t
   const filtered = q
     ? customers.filter(c => (c.name + ' ' + c.email + ' ' + c.phone + ' ' + c.address).toLowerCase().includes(q.toLowerCase()))
     : customers
@@ -1367,29 +1826,41 @@ function CustomersTab({ onOpen }) {
     <main className="main">
       <div className="card">
         <div className="proposals-head">
-          <div><h2 className="step-title">CUSTOMERS</h2><p className="step-sub">Every customer, grouped across all their proposals.</p></div>
+          <div><h2 className="step-title">CUSTOMERS</h2><p className="step-sub">Every customer, grouped across all their proposals. Build a project timeline they can follow at their private /c/ link.</p></div>
           <input className="search" placeholder="Search customers…" value={q} onChange={e => setQ(e.target.value)} />
         </div>
 
         {!filtered.length ? (
           <div className="empty"><div className="empty-icon">🏠</div><strong>No customers yet</strong><div>Customers appear here once you build proposals.</div></div>
         ) : (
-          <table className="ptable">
-            <thead><tr><th>Customer</th><th>Proposals</th><th>Status</th><th>Closed Value</th><th>Last Activity</th></tr></thead>
-            <tbody>
-              {filtered.map(c => (
-                <CustomerRow key={c.key} c={c} expanded={expanded === c.key}
-                  onToggle={() => setExpanded(expanded === c.key ? null : c.key)} onOpen={onOpen} />
-              ))}
-            </tbody>
-          </table>
+          <div className="ptable-wrap">
+            <table className="ptable">
+              <thead><tr><th>Customer</th><th>Proposals</th><th>Status</th><th>Timeline</th><th>Closed Value</th><th>Last Activity</th></tr></thead>
+              <tbody>
+                {filtered.map(c => (
+                  <CustomerRow key={c.key} c={c} token={tokenByKey[c.key]} expanded={expanded === c.key}
+                    onToggle={() => setExpanded(expanded === c.key ? null : c.key)}
+                    onOpen={onOpen} onManageTimeline={() => setTimelineFor(c)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      {timelineFor && (
+        <TimelineEditor
+          customer={timelineFor}
+          existing={tokenByKey[timelineFor.key] || null}
+          onClose={() => setTimelineFor(null)}
+          onSaved={loadTokens}
+        />
+      )}
     </main>
   )
 }
 
-function CustomerRow({ c, expanded, onToggle, onOpen }) {
+function CustomerRow({ c, token, expanded, onToggle, onOpen, onManageTimeline }) {
   return (
     <>
       <tr onClick={onToggle} style={{cursor:'pointer'}}>
@@ -1399,12 +1870,15 @@ function CustomerRow({ c, expanded, onToggle, onOpen }) {
         </td>
         <td>{c.proposals.length}</td>
         <td><StatusBadge status={c.latestStatus} /></td>
+        <td onClick={e => { e.stopPropagation(); onManageTimeline() }}>
+          <button className="tl-cell-btn">{token ? '🗓 Manage' : '＋ Create'}</button>
+        </td>
         <td><strong>{c.closedValue ? repMoney(c.closedValue) : '—'}</strong></td>
         <td className="meta">{c.lastActivity ? relTime(c.lastActivity) : '—'}</td>
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} style={{background:'#F7F6F3',padding:'10px 14px'}}>
+          <td colSpan={6} style={{background:'#F7F6F3',padding:'10px 14px'}}>
             {c.proposals.map(p => (
               <div key={p.id} className="cust-prop" onClick={() => onOpen && onOpen(p)}>
                 <span className="mono">{p.prop_num}{p.version_num > 1 ? ` v${p.version_num}` : ''}</span>
@@ -1417,6 +1891,164 @@ function CustomerRow({ c, expanded, onToggle, onOpen }) {
         </tr>
       )}
     </>
+  )
+}
+
+/* ─────────────── PROJECT TIMELINE EDITOR (v3.6) ─────────────── */
+const MILESTONE_STATUSES = [
+  { v: 'upcoming', label: 'Coming up' },
+  { v: 'current',  label: 'In progress' },
+  { v: 'done',     label: 'Done' },
+]
+const STAGE_OPTIONS = ['Proposal sent', 'Signed', 'Scheduled', 'Install in progress', 'Completed']
+const DEFAULT_MILESTONES = [
+  { label: 'Proposal signed',                    status: 'done',     date: '', note: '' },
+  { label: 'Pre-install walkthrough',            status: 'current',  date: '', note: 'Your rep confirms color choices and locks the install date.' },
+  { label: 'Permits pulled & materials ordered', status: 'upcoming', date: '', note: '' },
+  { label: 'Materials delivered',                status: 'upcoming', date: '', note: 'Manufacturer-fresh materials dropped 1–2 days before install.' },
+  { label: 'Tear-off & installation',            status: 'upcoming', date: '', note: 'Most homes finish in 1–2 days.' },
+  { label: 'Final inspection & cleanup',         status: 'upcoming', date: '', note: 'Magnetic sweep and a final walkthrough with you.' },
+  { label: 'Warranty registered',                status: 'upcoming', date: '', note: '' },
+]
+
+// The public /c/[token] page accepts loose milestone shapes — normalize to ours.
+function normMilestone(m) {
+  const v = String(m?.status || m?.state || '').toLowerCase()
+  const status = ['done', 'complete', 'completed'].includes(v) ? 'done'
+    : ['current', 'in_progress', 'in-progress', 'active', 'expected'].includes(v) ? 'current'
+    : 'upcoming'
+  return {
+    label:  m?.label || m?.name || m?.title || '',
+    status,
+    date:   m?.date || m?.expected_date || m?.completed_at || m?.eta || '',
+    note:   m?.note || m?.detail || '',
+  }
+}
+
+function TimelineEditor({ customer, existing, onClose, onSaved }) {
+  const [token, setToken]   = useState(existing?.token || null)
+  const [stage, setStage]   = useState(existing?.customer_stage || 'Proposal sent')
+  const [repMsg, setRepMsg] = useState(existing?.rep_message || '')
+  const [milestones, setMs] = useState(
+    Array.isArray(existing?.project_milestones) && existing.project_milestones.length
+      ? existing.project_milestones.map(normMilestone)
+      : []
+  )
+  const [busy, setBusy]   = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr]     = useState('')
+
+  const shareUrl = token && typeof window !== 'undefined' ? `${location.origin}/c/${token}` : ''
+
+  const setMilestone = (i, patch) => setMs(ms => ms.map((m, j) => j === i ? { ...m, ...patch } : m))
+  const addMilestone = () => setMs(ms => [...ms, { label: '', status: 'upcoming', date: '', note: '' }])
+  const removeMilestone = i => setMs(ms => ms.filter((_, j) => j !== i))
+  function move(i, dir) {
+    setMs(ms => {
+      const j = i + dir
+      if (j < 0 || j >= ms.length) return ms
+      const next = [...ms]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  }
+
+  async function save() {
+    setBusy(true); setErr(''); setSaved(false)
+    try {
+      const clean = milestones.map(m => ({ ...m, label: m.label.trim() })).filter(m => m.label)
+      const payload = { display_name: customer.name, customer_stage: stage, rep_message: repMsg, project_milestones: clean }
+      const r = await fetch('/api/customer-tokens', {
+        method: token ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(token ? { token, ...payload } : { customer_key: customer.key, ...payload }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Save failed')
+      setToken(d.token.token)
+      setMs((d.token.project_milestones || []).map(normMilestone))
+      setSaved(true)
+      onSaved && onSaved()
+    } catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="detail-overlay" onClick={onClose}>
+      <div className="detail-panel" onClick={e => e.stopPropagation()}>
+        <div className="detail-head">
+          <div>
+            <div className="meta" style={{fontSize:11,fontWeight:900,letterSpacing:1.2}}>PROJECT TIMELINE</div>
+            <h2 style={{fontSize:22,fontWeight:900,color:'var(--navy)',margin:'4px 0'}}>{customer.name}</h2>
+            <div className="meta">What the customer sees at their private /c/ link.</div>
+          </div>
+          <button className="btn-icon" onClick={onClose} style={{fontSize:20}}>×</button>
+        </div>
+
+        <div className="detail-body">
+          {token ? (
+            <div className="detail-link">
+              <input readOnly value={shareUrl} onClick={e => e.target.select()} />
+              <button className="btn btn-outline btn-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); alert('Copied') }}>Copy</button>
+              <a className="btn btn-outline btn-sm" href={shareUrl} target="_blank" rel="noreferrer">Open</a>
+            </div>
+          ) : (
+            <div className="tl-hint">No timeline link yet — fill in the details below and Save to generate the customer's private link.</div>
+          )}
+
+          <div className="field">
+            <label>Current stage <span className="tl-lbl-hint">— shown at the top of their page</span></label>
+            <input list="tl-stages" value={stage} onChange={e => setStage(e.target.value)} placeholder="e.g. Scheduled" />
+            <datalist id="tl-stages">{STAGE_OPTIONS.map(s => <option key={s} value={s} />)}</datalist>
+          </div>
+
+          <div className="field">
+            <label>A note from the rep <span className="tl-lbl-hint">— optional, friendly message</span></label>
+            <textarea rows={2} value={repMsg} onChange={e => setRepMsg(e.target.value)} placeholder="Hi! Here's where your roof project stands…" />
+          </div>
+
+          <div>
+            <div className="tl-ms-head">
+              <span className="tl-ms-heading">MILESTONES</span>
+              {milestones.length === 0 && (
+                <button className="btn btn-outline btn-sm" onClick={() => setMs(DEFAULT_MILESTONES.map(m => ({ ...m })))}>Load standard roofing timeline</button>
+              )}
+            </div>
+            {milestones.length === 0 && <div className="tl-hint">No milestones yet. Load the standard set above, or add your own.</div>}
+            {milestones.map((m, i) => (
+              <div key={i} className="tl-ms">
+                <div className="tl-ms-top">
+                  <input className="tl-ms-label" value={m.label} onChange={e => setMilestone(i, { label: e.target.value })} placeholder="Milestone name" />
+                  <select className="tl-ms-status" value={m.status} onChange={e => setMilestone(i, { status: e.target.value })}>
+                    {MILESTONE_STATUSES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div className="tl-ms-top">
+                  <input className="tl-ms-date" value={m.date} onChange={e => setMilestone(i, { date: e.target.value })} placeholder="Date (e.g. Mon, Jun 3) — optional" />
+                  <div className="tl-ms-ctrls">
+                    <button className="btn-icon" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
+                    <button className="btn-icon" onClick={() => move(i, 1)} disabled={i === milestones.length - 1} title="Move down">↓</button>
+                    <button className="btn-icon danger" onClick={() => removeMilestone(i)} title="Remove">🗑</button>
+                  </div>
+                </div>
+                <input className="tl-ms-note" value={m.note} onChange={e => setMilestone(i, { note: e.target.value })} placeholder="Short note shown under this milestone — optional" />
+              </div>
+            ))}
+            {milestones.length > 0 && (
+              <button className="btn btn-outline btn-sm" onClick={addMilestone} style={{marginTop:8}}>+ Add milestone</button>
+            )}
+          </div>
+
+          {err && <div className="error-banner">⚠️ {err}</div>}
+          {saved && <div className="ok-banner">✓ Saved — the customer's timeline is live.</div>}
+
+          <div className="step-nav" style={{marginTop:0}}>
+            <button className="btn btn-back" onClick={onClose}>Close</button>
+            <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : token ? '💾 Save changes' : '✓ Create timeline'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1565,20 +2197,22 @@ function OwnerDashboard({ onOpen, onGoBuild }) {
         {/* Leaderboard */}
         <div className="dash-panel" style={{marginTop:16}}>
           <div className="dash-panel-title">REP LEADERBOARD</div>
-          <table className="ptable">
-            <thead><tr><th>#</th><th>Rep</th><th>Sent</th><th>Closed</th><th>Revenue</th></tr></thead>
-            <tbody>
-              {m.leaderboard.map((r, i) => (
-                <tr key={r.rep}>
-                  <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
-                  <td className="ptable-name">{r.rep}</td>
-                  <td>{r.sent}</td>
-                  <td><strong>{r.accepted}</strong></td>
-                  <td><strong>{repMoney(r.revenue)}</strong></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="ptable-wrap">
+            <table className="ptable">
+              <thead><tr><th>#</th><th>Rep</th><th>Sent</th><th>Closed</th><th>Revenue</th></tr></thead>
+              <tbody>
+                {m.leaderboard.map((r, i) => (
+                  <tr key={r.rep}>
+                    <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
+                    <td className="ptable-name">{r.rep}</td>
+                    <td>{r.sent}</td>
+                    <td><strong>{r.accepted}</strong></td>
+                    <td><strong>{repMoney(r.revenue)}</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </main>
@@ -1718,27 +2352,29 @@ function RepsTab() {
             {!reps.length ? (
               <div className="empty"><div className="empty-icon">📊</div><strong>No data for this window</strong><div>Proposals created in range will show up here</div></div>
             ) : (
-              <table className="ptable">
-                <thead><tr>
-                  <th>#</th><th>Rep</th><th>Sent</th><th>Viewed</th><th>Closed</th>
-                  <th>Accept&nbsp;%</th><th>Avg&nbsp;Ticket</th><th>Avg&nbsp;Close&nbsp;Time</th><th>Revenue</th>
-                </tr></thead>
-                <tbody>
-                  {reps.map((r, i) => (
-                    <tr key={r.rep_name}>
-                      <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
-                      <td className="ptable-name">{r.rep_name}</td>
-                      <td>{r.sent}</td>
-                      <td>{r.viewed}</td>
-                      <td><strong>{r.accepted}</strong></td>
-                      <td>{repPct(r.acceptRate)}</td>
-                      <td>{r.avgTicket ? repMoney(r.avgTicket) : '—'}</td>
-                      <td>{repDuration(r.avgHoursToAccept)}</td>
-                      <td><strong>{repMoney(r.revenue)}</strong></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="ptable-wrap">
+                <table className="ptable">
+                  <thead><tr>
+                    <th>#</th><th>Rep</th><th>Sent</th><th>Viewed</th><th>Closed</th>
+                    <th>Accept&nbsp;%</th><th>Avg&nbsp;Ticket</th><th>Avg&nbsp;Close&nbsp;Time</th><th>Revenue</th>
+                  </tr></thead>
+                  <tbody>
+                    {reps.map((r, i) => (
+                      <tr key={r.rep_name}>
+                        <td><span className={`rank ${i===0 && r.accepted>0 ? 'gold' : ''}`}>{i+1}</span></td>
+                        <td className="ptable-name">{r.rep_name}</td>
+                        <td>{r.sent}</td>
+                        <td>{r.viewed}</td>
+                        <td><strong>{r.accepted}</strong></td>
+                        <td>{repPct(r.acceptRate)}</td>
+                        <td>{r.avgTicket ? repMoney(r.avgTicket) : '—'}</td>
+                        <td>{repDuration(r.avgHoursToAccept)}</td>
+                        <td><strong>{repMoney(r.revenue)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </>
         )}
@@ -1870,6 +2506,30 @@ function GlobalCSS() {
       .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
       .photo-thumb-x{position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;border:none;font-size:18px;cursor:pointer;font-weight:300;display:flex;align-items:center;justify-content:center;line-height:1}
       .photo-help{margin-top:14px;padding:10px 14px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;font-size:12px;color:#78350F;line-height:1.5}
+      /* ── AI photo analysis (v3.4 photo step) ── */
+      .btn-analyze{width:100%;margin-top:14px;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border:none;border-radius:11px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.3px;min-height:50px}
+      .btn-analyze:hover:not(:disabled){filter:brightness(1.15)}
+      .btn-analyze:disabled{opacity:.65;cursor:not-allowed}
+      .pa-card{margin-top:14px;background:#fff;border:2px solid var(--navy);border-radius:13px;padding:16px 18px}
+      .pa-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:900;color:var(--navy);letter-spacing:1px;margin-bottom:12px}
+      .pa-score{background:var(--navy);color:var(--gold-l);font-size:11px;font-weight:900;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
+      .pa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+      .pa-est{background:var(--cream);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+      .pa-est-lbl{font-size:9px;font-weight:900;color:var(--mute);letter-spacing:.8px;display:flex;align-items:center;gap:5px}
+      .pa-est-val{font-size:16px;font-weight:900;color:var(--navy)}
+      .pa-est-val-sm{font-size:12px;line-height:1.35}
+      .pa-conf{font-size:8px;font-weight:900;padding:1px 5px;border-radius:4px;letter-spacing:.4px;text-transform:uppercase}
+      .pa-conf-high{background:#D1FAE5;color:#065F46}
+      .pa-conf-medium{background:#FEF3C7;color:#92400E}
+      .pa-conf-low{background:#FEE2E2;color:#991B1B}
+      .pa-apply{align-self:flex-start;background:#fff;border:2px solid var(--crimson);color:var(--crimson);font-size:10px;font-weight:900;padding:3px 9px;border-radius:6px;cursor:pointer;font-family:inherit;margin-top:2px}
+      .pa-apply:hover{background:var(--crimson);color:#fff}
+      .pa-row{font-size:12.5px;color:var(--text);line-height:1.55;margin-bottom:7px}
+      .pa-row strong{color:var(--navy);font-weight:800}
+      .pa-notes{color:var(--mute);font-style:italic}
+      .pa-addons{background:rgba(176,30,23,.04);border:1px solid var(--bord);border-radius:9px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:7px}
+      .pa-foot{font-size:11px;color:var(--mute);font-style:italic;padding-top:10px;border-top:1px solid var(--bord)}
+      @media(max-width:480px){.pa-grid{grid-template-columns:1fr}}
       .review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
       .review-box{background:var(--cream);border-left:5px solid var(--crimson);padding:16px 20px;border-radius:11px}
       .review-box:nth-child(2){border-left-color:var(--gold)}
@@ -2081,6 +2741,73 @@ function GlobalCSS() {
       /* ── Customers tab (v3.3) ── */
       .cust-prop{display:flex;align-items:center;gap:12px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:12px}
       .cust-prop:hover{background:#fff}
+      /* ── Project timeline editor (v3.6) ── */
+      .tl-cell-btn{background:#fff;border:2px solid var(--bord);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--navy);white-space:nowrap}
+      .tl-cell-btn:hover{border-color:var(--crimson);color:var(--crimson)}
+      .tl-hint{font-size:12px;color:var(--mute);background:#fff;border:1px dashed var(--bord);border-radius:9px;padding:11px;line-height:1.5}
+      .tl-lbl-hint{font-weight:600;color:var(--light);text-transform:none;letter-spacing:0}
+      .tl-ms-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+      .tl-ms-heading{font-size:11px;font-weight:900;color:var(--mute);text-transform:uppercase;letter-spacing:1.4px}
+      .tl-ms{background:var(--cream);border:2px solid var(--bord);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;flex-direction:column;gap:7px}
+      .tl-ms-top{display:flex;gap:7px;align-items:center}
+      .tl-ms input,.tl-ms select{padding:8px 10px;border:2px solid var(--bord);border-radius:7px;font-size:13px;font-family:inherit;font-weight:600;outline:none;background:#fff;color:var(--text)}
+      .tl-ms input:focus,.tl-ms select:focus{border-color:var(--crimson)}
+      .tl-ms-label{flex:1;min-width:0}
+      .tl-ms-status{width:130px;flex-shrink:0}
+      .tl-ms-date{flex:1;min-width:0}
+      .tl-ms-note{width:100%}
+      .tl-ms-ctrls{display:flex;gap:4px;flex-shrink:0}
+      /* ── Send modal (v3.7 + v3.7.1) ── */
+      .send-channels{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .send-channel{display:flex;align-items:center;gap:10px;background:var(--cream);border:2px solid var(--bord);border-radius:11px;padding:12px 13px;cursor:pointer;font-family:inherit;text-align:left;transition:all .15s}
+      .send-channel:hover:not(:disabled){border-color:var(--crimson)}
+      .send-channel.on{border-color:var(--crimson);background:rgba(176,30,23,.04)}
+      .send-channel:disabled{opacity:.5;cursor:not-allowed}
+      .send-channel-chk{width:20px;height:20px;border-radius:5px;border:2px solid var(--bord);background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;flex-shrink:0}
+      .send-channel-chk.on{background:var(--crimson);border-color:var(--crimson)}
+      .send-channel-ic{font-size:20px;flex-shrink:0}
+      .send-channel-txt{display:flex;flex-direction:column;min-width:0}
+      .send-channel-label{font-size:13px;font-weight:800;color:var(--navy)}
+      .send-channel-sub{font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .send-lang{display:flex;align-items:center;gap:12px}
+      .send-lang-lbl{font-size:12px;font-weight:700;color:var(--mute)}
+      .send-lang-toggle{display:flex;gap:4px;background:var(--cream);padding:4px;border-radius:9px;border:2px solid var(--bord)}
+      .send-lang-toggle button{padding:7px 16px;font-size:12px;font-weight:800;border:none;background:none;border-radius:6px;cursor:pointer;font-family:inherit;color:var(--mute)}
+      .send-lang-toggle button.on{background:var(--crimson);color:#fff}
+      .send-lang-toggle button:disabled{opacity:.6;cursor:not-allowed}
+      .send-result{padding:8px 0}
+      .tpl-hint{font-size:12px;color:var(--mute);line-height:1.7}
+      .tpl-hint code{background:var(--cream);border:1px solid var(--bord);padding:1px 6px;border-radius:4px;font-size:11px}
+      /* ── Change orders editor (Settings) ── */
+      .co-row{background:var(--cream);border:2px solid var(--bord);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:7px}
+      .co-row-top{display:flex;gap:7px;align-items:center}
+      .co-row input{padding:8px 10px;border:2px solid var(--bord);border-radius:7px;font-size:13px;font-family:inherit;font-weight:600;outline:none;background:#fff;color:var(--text)}
+      .co-row input:focus{border-color:var(--crimson)}
+      .co-label{flex:1;min-width:0}
+      .co-desc{width:100%}
+      .co-price{display:flex;align-items:center;gap:4px;flex-shrink:0}
+      .co-price span{font-weight:900;color:var(--mute)}
+      .co-price input{width:90px;text-align:right}
+      /* ── v3.3 pricing: solar counter + package pricing/visibility ── */
+      .solar-panels-box{margin-top:14px;max-width:280px}
+      .pricing-rows{display:flex;flex-direction:column;gap:8px}
+      .pricing-row{display:flex;align-items:center;gap:12px;background:var(--cream);border:2px solid var(--bord);border-radius:10px;padding:11px 14px}
+      .pricing-row.off{opacity:.5}
+      .pr-chk{width:24px;height:24px;border-radius:6px;border:2px solid var(--bord);background:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;cursor:pointer;flex-shrink:0;font-family:inherit}
+      .pr-chk.on{background:var(--crimson);border-color:var(--crimson)}
+      .pr-tier{font-size:14px;font-weight:900;color:var(--navy);flex:1;min-width:0}
+      .pr-computed{font-size:11px;color:var(--mute);white-space:nowrap}
+      .pr-override{display:flex;align-items:center;gap:4px;flex-shrink:0}
+      .pr-override span{font-weight:900;color:var(--mute)}
+      .pr-override input{width:110px;border:2px solid var(--bord);border-radius:7px;padding:8px 10px;font-size:14px;font-weight:800;font-family:inherit;outline:none;text-align:right;background:#fff;color:var(--text)}
+      .pr-override input:focus{border-color:var(--crimson)}
+      .pr-note{margin-top:10px;font-size:12px;color:var(--mute);background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;padding:9px 12px}
+      @media(max-width:480px){
+        .pricing-row{flex-wrap:wrap}
+        .pr-tier{flex:1 0 50%}
+        .pr-override input{width:90px}
+      }
+      @media(max-width:780px){.send-channels{grid-template-columns:1fr}}
       /* ── AI Assistant widget (v3.4) ── */
       .assist-fab{position:fixed;bottom:22px;right:22px;width:56px;height:56px;border-radius:50%;border:none;background:#B01E17;color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 20px rgba(176,30,23,.4);z-index:900}
       .assist-fab:hover{background:#D4251C}

@@ -15,6 +15,19 @@ export default async function handler(req, res) {
     return res.status(200).json(redact(data))
   }
 
+  if (req.method === 'PUT') {
+    if (!isAuthed(req)) return res.status(401).json({ error: 'Unauthorized' })
+    // Admin-only status flip. 'expired' = customer not moving forward (paused /
+    // declined); 'sent' = reactivated. Pulls it out of the active pipeline math.
+    const next = req.body?.status
+    if (!['sent', 'expired'].includes(next)) {
+      return res.status(400).json({ error: "status must be 'sent' or 'expired'" })
+    }
+    const { error } = await sb.from('proposals').update({ status: next }).eq('id', id)
+    if (error) return res.status(500).json({ error: 'Update failed' })
+    return res.status(200).json({ ok: true, status: next })
+  }
+
   if (req.method === 'DELETE') {
     if (!isAuthed(req)) return res.status(401).json({ error: 'Unauthorized' })
     const { error } = await sb.from('proposals').delete().eq('id', id)

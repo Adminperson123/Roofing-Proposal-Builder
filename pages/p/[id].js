@@ -68,12 +68,15 @@ export default function PublicProposal() {
   const [lightbox, setLightbox] = useState(null)
   const [openFaq, setOpenFaq] = useState(null)
   const [brandAssets, setBrandAssets] = useState({})
+  const [changeOrders, setChangeOrders] = useState([])
+  const [adders, setAdders] = useState([])
   const sigRef = useRef(null)
   const sigCtxRef = useRef(null)
   const [sigFilled, setSigFilled] = useState(false)
 
   useEffect(() => {
     fetch('/api/brand-assets').then(r => r.json()).then(d => setBrandAssets(d.assets || {})).catch(() => {})
+    fetch('/api/change-orders').then(r => r.json()).then(d => setChangeOrders(d.changeOrders || [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -126,9 +129,18 @@ export default function PublicProposal() {
     const dataUrl = sigRef.current?.toDataURL('image/png')
     const r = await fetch(`/api/proposal/${id}/accept`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tier: picking, signature: dataUrl }),
+      body: JSON.stringify({ tier: picking, signature: dataUrl, addons: adders }),
     })
     if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || 'Failed to accept'); return }
+    const d = await r.json().catch(() => ({}))
+    if (d.proposal) {
+      setP(prev => ({
+        ...prev,
+        accepted_total: d.proposal.accepted_total,
+        accepted_addons: d.proposal.accepted_addons,
+        selected_tier: picking,
+      }))
+    }
     setAccepted({ tier: picking, at: new Date().toISOString() })
     setPicking(null)
   }
@@ -137,6 +149,9 @@ export default function PublicProposal() {
   if (!p)  return <Center>Loading proposal…</Center>
 
   const tiers = p.tiers || {}
+  // v3.3 — rep can hide tiers; tiers._visible holds the ones to show.
+  const visibleTierKeys = (Array.isArray(tiers._visible) && tiers._visible.length ? tiers._visible : ['good','better','best'])
+    .filter(k => ['good','better','best'].includes(k))
   const COLORS = { good: '#4A5568', better: '#B01E17', best: '#D4960E' }
   const date = new Date(p.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
   const expires = p.expires_at ? new Date(p.expires_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '—'
@@ -144,8 +159,11 @@ export default function PublicProposal() {
   const financingOn = p.financing_enabled !== false
   const updated = router.query.v === 'updated'
   const repInitial = (p.rep_name || 'G').trim().charAt(0).toUpperCase()
+  const addersList = changeOrders.filter(c => adders.includes(c.id))
+  const addersSubtotal = addersList.reduce((s, c) => s + (Number(c.price) || 0), 0)
+  const acceptedAddons = Array.isArray(p.accepted_addons) ? p.accepted_addons : []
   const sel = accepted ? tiers[accepted.tier] : null
-  const selPrice = sel?.price || 0
+  const selPrice = (accepted && p.accepted_total) ? Number(p.accepted_total) : (sel?.price || 0)
   const deposit = Math.min(1000, Math.round(selPrice * 0.10))
   const startPay = Math.round(selPrice * 0.50)
   const finalPay = selPrice - deposit - startPay
@@ -294,9 +312,9 @@ export default function PublicProposal() {
               <h2 className="pub-section-title">CHOOSE YOUR PACKAGE</h2>
               <p className="pub-section-sub">Essential, Performance, or Signature. Same workmanship across all three — different materials and warranties. Pick the one that fits your home and your budget.</p>
               <div className="pub-tiers">
-                {['good','better','best'].map(k => {
+                {visibleTierKeys.map(k => {
                   const t = tiers[k]; if (!t) return null
-                  const c = COLORS[k]; const popular = k === 'better'
+                  const c = COLORS[k]; const popular = k === 'better' && visibleTierKeys.length > 1
                   return (
                     <article key={k} className={`pub-tier ${popular ? 'pop' : ''}`} style={{ borderColor: c }}>
                       {popular && <div className="pub-tier-pop">★ MOST POPULAR</div>}
@@ -331,11 +349,51 @@ export default function PublicProposal() {
             </section>
           )}
 
+          {!accepted && changeOrders.length > 0 && (
+            <section className="pub-upgrades">
+              <h2 className="pub-section-title">✨ OPTIONAL UPGRADES</h2>
+              <p className="pub-section-sub" style={{ marginBottom: 14 }}>
+                Add any of these to your project. Whatever you check is added to your total when you sign — no pressure, pick only what you want.
+              </p>
+              <div className="pub-upgrade-list">
+                {changeOrders.map(c => {
+                  const on = adders.includes(c.id)
+                  return (
+                    <button key={c.id} type="button" className={`pub-upgrade ${on ? 'on' : ''}`}
+                      onClick={() => setAdders(a => on ? a.filter(x => x !== c.id) : [...a, c.id])}>
+                      <span className={`pub-upgrade-chk ${on ? 'on' : ''}`}>{on ? '✓' : ''}</span>
+                      <span className="pub-upgrade-body">
+                        <span className="pub-upgrade-label">{c.label}</span>
+                        {c.description && <span className="pub-upgrade-desc">{c.description}</span>}
+                      </span>
+                      <span className="pub-upgrade-price">+${(Number(c.price) || 0).toLocaleString()}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {addersSubtotal > 0 && (
+                <div className="pub-upgrade-subtotal">
+                  {addersList.length} upgrade{addersList.length > 1 ? 's' : ''} selected ·{' '}
+                  <strong>+${addersSubtotal.toLocaleString()}</strong> added at signing
+                </div>
+              )}
+            </section>
+          )}
+
           {accepted && (
             <section className="pub-accepted">
               <div className="pub-accepted-icon">✓</div>
               <h2>You picked the {TIER_LABELS[accepted.tier]} package</h2>
               <p>We received your acceptance on {new Date(accepted.at).toLocaleString()}. Your rep will be in touch within 24 hours to schedule the install.</p>
+              {acceptedAddons.length > 0 && (
+                <div className="pub-accepted-addons">
+                  <div className="pub-accepted-adder"><span>{TIER_LABELS[accepted.tier]} package</span><span>${(sel?.price || 0).toLocaleString()}</span></div>
+                  {acceptedAddons.map((a, i) => (
+                    <div key={i} className="pub-accepted-adder"><span>+ {a.label}</span><span>${(Number(a.price) || 0).toLocaleString()}</span></div>
+                  ))}
+                  <div className="pub-accepted-adder pub-accepted-tot"><span>Total</span><span>${selPrice.toLocaleString()}</span></div>
+                </div>
+              )}
               <a className="pub-btn-outline" href={`/api/proposal/${p.id}/pdf`} target="_blank" rel="noreferrer">Download PDF copy</a>
             </section>
           )}
@@ -546,6 +604,16 @@ export default function PublicProposal() {
               <strong>{tiers[picking].name}</strong> — ${(tiers[picking].price || 0).toLocaleString()}<br />
               <span>{tiers[picking].material}</span>
             </div>
+            {addersList.length > 0 && (
+              <div className="pub-modal-adders">
+                {addersList.map(c => (
+                  <div key={c.id} className="pub-modal-adder"><span>+ {c.label}</span><span>${(Number(c.price) || 0).toLocaleString()}</span></div>
+                ))}
+                <div className="pub-modal-adder pub-modal-adder-tot">
+                  <span>Total</span><span>${((tiers[picking].price || 0) + addersSubtotal).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
             <div className="pub-sig-wrap">
               <canvas ref={el => { sigRef.current = el; if (el) initSig(el) }} className="pub-sig" />
               <div className="pub-sig-bar">
@@ -665,6 +733,25 @@ export default function PublicProposal() {
         .pub-tier-cta{color:#fff;border:none;border-radius:10px;padding:14px 18px;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer;font-family:inherit;transition:filter .15s;min-height:48px}
         .pub-tier-cta:hover{filter:brightness(1.1)}
         .pub-fin-note{font-size:11px;color:var(--mute);font-style:italic;text-align:center;margin-bottom:0}
+        .pub-upgrades{}
+        .pub-upgrade-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+        .pub-upgrade{display:flex;align-items:center;gap:13px;background:#fff;border:2px solid var(--bord);border-radius:12px;padding:14px 16px;cursor:pointer;font-family:inherit;text-align:left;transition:all .15s;width:100%}
+        .pub-upgrade:hover{border-color:var(--crimson)}
+        .pub-upgrade.on{border-color:var(--crimson);background:rgba(176,30,23,.04)}
+        .pub-upgrade-chk{width:24px;height:24px;border-radius:6px;border:2px solid var(--bord);background:var(--cream);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;flex-shrink:0}
+        .pub-upgrade-chk.on{background:var(--crimson);border-color:var(--crimson)}
+        .pub-upgrade-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+        .pub-upgrade-label{font-size:14px;font-weight:800;color:var(--navy)}
+        .pub-upgrade-desc{font-size:12px;color:var(--mute);line-height:1.45}
+        .pub-upgrade-price{font-size:15px;font-weight:900;color:var(--crimson);flex-shrink:0;white-space:nowrap}
+        .pub-upgrade-subtotal{margin-top:12px;background:var(--navy);color:#fff;border-radius:10px;padding:12px 16px;font-size:13px;text-align:center}
+        .pub-upgrade-subtotal strong{color:var(--gold);font-weight:900}
+        .pub-modal-adders{background:#fff;border:1px solid var(--bord);border-radius:10px;padding:10px 13px;margin-bottom:18px;margin-top:-8px}
+        .pub-modal-adder{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);padding:3px 0}
+        .pub-modal-adder-tot{border-top:1px solid var(--bord);margin-top:4px;padding-top:7px;font-weight:900;color:var(--navy);font-size:15px}
+        .pub-accepted-addons{max-width:420px;margin:4px auto 18px;background:var(--cream);border-radius:10px;padding:12px 16px;text-align:left}
+        .pub-accepted-adder{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);padding:4px 0}
+        .pub-accepted-tot{border-top:1px solid var(--bord);margin-top:4px;padding-top:8px;font-weight:900;color:#065F46;font-size:16px}
         .pub-materials{}
         .pub-mat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px}
         .pub-mat-card{background:#fff;border:1px solid var(--bord);border-radius:11px;padding:16px 18px}
