@@ -837,21 +837,27 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
   const [busy, setBusy] = useState(false)
   const [pendingPatch, setPendingPatch] = useState(null)
   const [reason, setReason] = useState('')
-  const [fieldToken, setFieldToken] = useState(proposal.field_token || null)
-  const [showField, setShowField] = useState(false)
+  const [customerToken, setCustomerToken] = useState(null)
   const [inspections, setInspections] = useState([])
   const [creatingInsp, setCreatingInsp] = useState(false)
   const [showSend, setShowSend] = useState(false)
   const [status, setStatus] = useState(proposal.status)
   const [statusBusy, setStatusBusy] = useState(false)
 
-  // Re-fetch the proposal to get a fresh field_token if we didn't get one from the list.
+  // Look up this customer's timeline token, if one has been set up. Keyed by the
+  // same lowercased email → phone → name the Customers tab uses to group proposals.
+  // null = no timeline yet (the Customer-timeline button stays hidden in that case).
   useEffect(() => {
-    if (fieldToken) return
-    fetch(`/api/proposal/${proposal.id}`).then(r => r.json()).then(d => {
-      if (d.field_token) setFieldToken(d.field_token)
-    }).catch(() => {})
-  }, [proposal.id, fieldToken])
+    const key = (proposal.customer_email || proposal.customer_phone || proposal.customer_name || '').trim().toLowerCase()
+    if (!key) return
+    fetch('/api/customer-tokens')
+      .then(r => r.json())
+      .then(d => {
+        const match = (d.tokens || []).find(t => t.customer_key === key)
+        if (match) setCustomerToken(match.token)
+      })
+      .catch(() => {})
+  }, [proposal.id])
 
   // Load existing inspections for this proposal
   useEffect(() => {
@@ -941,9 +947,6 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
   }
 
   const shareUrl = typeof window !== 'undefined' ? `${location.origin}/p/${proposal.id}` : ''
-  const fieldUrl = typeof window !== 'undefined' && fieldToken
-    ? `${location.origin}/field/${proposal.id}?t=${encodeURIComponent(fieldToken)}`
-    : ''
 
   return (
     <div className="detail-overlay" onClick={onClose}>
@@ -965,13 +968,30 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
             <div><span>Selected</span><strong>{proposal.selected_tier ? <TierPill tier={proposal.selected_tier} tiers={proposal.tiers}/> : '—'}</strong></div>
           </div>
 
-          <div className="detail-link">
-            <input readOnly value={shareUrl} onClick={e => e.target.select()} />
-            <button className="btn btn-outline btn-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); alert('Copied') }}>Copy</button>
-            <a className="btn btn-outline btn-sm" href={shareUrl} target="_blank" rel="noreferrer">Open</a>
+          {/* Quick-action grid — every per-proposal action lives in one place.
+              Reuses the .success-actions / .sa-btn vocabulary from SuccessScreen. */}
+          <div className="success-actions">
+            <button className="sa-btn sa-primary" onClick={() => setShowSend(true)}>
+              <span className="sa-ic">📨</span>Send (text / email)
+            </button>
+            <a className="sa-btn" href={shareUrl} target="_blank" rel="noreferrer">
+              <span className="sa-ic">👁</span>View proposal
+            </a>
+            <a className="sa-btn" href={`/present/${proposal.id}`} target="_blank" rel="noreferrer">
+              <span className="sa-ic">🖥</span>Presentation
+            </a>
+            <a className="sa-btn" href={`/api/proposal/${proposal.id}/pdf`} target="_blank" rel="noreferrer">
+              <span className="sa-ic">⬇️</span>Download PDF
+            </a>
+            <button className="sa-btn" onClick={() => { navigator.clipboard.writeText(shareUrl); alert('Link copied') }}>
+              <span className="sa-ic">🔗</span>Copy link
+            </button>
+            {customerToken && (
+              <a className="sa-btn" href={`/c/${customerToken}`} target="_blank" rel="noreferrer">
+                <span className="sa-ic">📅</span>Customer timeline
+              </a>
+            )}
           </div>
-
-          <button className="btn btn-primary" style={{width:'100%'}} onClick={() => setShowSend(true)}>📨 Send to customer (text / email)</button>
 
           {status === 'expired' ? (
             <button className="btn btn-outline" style={{width:'100%'}} disabled={statusBusy} onClick={() => changeStatus('sent')}>
@@ -982,41 +1002,6 @@ function ProposalDetail({ proposal, onClose, onUpdated }) {
               {statusBusy ? 'Updating…' : '✕ Mark as not moving forward'}
             </button>
           )}
-
-          <div className="field-link-block">
-            <div className="field-link-head">
-              <div>
-                <div className="field-link-title">📲 Field Link</div>
-                <div className="field-link-sub">For the rep on-site — opens straight to camera. Valid 30 days.</div>
-              </div>
-              <button className="btn btn-outline btn-sm" onClick={() => setShowField(s => !s)} disabled={!fieldUrl}>
-                {showField ? 'Hide' : (fieldUrl ? 'Show' : 'Loading…')}
-              </button>
-            </div>
-            {showField && fieldUrl && (
-              <div className="field-link-body">
-                <div className="detail-link">
-                  <input readOnly value={fieldUrl} onClick={e => e.target.select()} />
-                  <button className="btn btn-outline btn-sm" onClick={() => { navigator.clipboard.writeText(fieldUrl); alert('Copied') }}>Copy</button>
-                  <a className="btn btn-outline btn-sm" href={fieldUrl} target="_blank" rel="noreferrer">Open</a>
-                </div>
-                <div className="field-link-qr-row">
-                  <img
-                    className="field-link-qr"
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(fieldUrl)}`}
-                    alt="Field Link QR code"
-                  />
-                  <div className="field-link-hint">
-                    <strong>Two ways to use:</strong>
-                    <ol>
-                      <li>SMS the link to the rep's phone</li>
-                      <li>Or have them scan this QR on-site</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
 
           <div className="inspection-block">
             <div className="inspection-head">
@@ -2600,17 +2585,6 @@ function GlobalCSS() {
       .detail-summary strong{font-size:13px;font-weight:800;color:var(--navy)}
       .detail-link{display:flex;gap:8px;align-items:center}
       .detail-link input{flex:1;padding:11px 13px;border:2px solid var(--bord);border-radius:8px;font-family:monospace;font-size:12px;color:var(--navy);font-weight:700;background:var(--cream);outline:none;min-width:0}
-      .field-link-block{background:linear-gradient(180deg,#FFFBEB,#fff);border:1px solid #FCD34D;border-radius:12px;padding:14px 16px}
-      .field-link-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-      .field-link-title{font-size:14px;font-weight:900;color:var(--navy)}
-      .field-link-sub{font-size:11.5px;color:var(--mute);margin-top:2px}
-      .field-link-body{margin-top:14px;display:flex;flex-direction:column;gap:14px}
-      .field-link-qr-row{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid var(--bord);border-radius:10px;padding:14px}
-      .field-link-qr{width:140px;height:140px;flex-shrink:0;border-radius:8px;background:#fff}
-      .field-link-hint{font-size:12.5px;color:var(--mute);line-height:1.55}
-      .field-link-hint strong{color:var(--navy);font-weight:800;display:block;margin-bottom:6px;font-size:13px}
-      .field-link-hint ol{margin:0;padding-left:18px}
-      .field-link-hint li{margin-bottom:3px}
       .inspection-block{background:linear-gradient(180deg,#F0FDF4,#fff);border:1px solid #A7F3D0;border-radius:12px;padding:14px 16px}
       .inspection-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
       .inspection-title{font-size:14px;font-weight:900;color:var(--navy)}
@@ -2669,8 +2643,6 @@ function GlobalCSS() {
         .detail-summary{grid-template-columns:repeat(2,1fr)}
         .detail-overlay{align-items:flex-end;padding:0}
         .detail-panel{max-height:96vh;border-radius:14px 14px 0 0}
-        .field-link-qr-row{flex-direction:column;text-align:center}
-        .field-link-qr{width:160px;height:160px}
         .detail-head{padding:16px 18px}
         .detail-body{padding:14px 18px 18px}
         .ai-chat-input{flex-direction:column;align-items:stretch}
