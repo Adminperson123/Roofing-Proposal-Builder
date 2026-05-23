@@ -1,5 +1,5 @@
 import { serverClient } from '../../../../lib/supabase'
-import { isAuthed, signFieldToken } from '../../../../lib/auth'
+import { isAuthed } from '../../../../lib/auth'
 
 export default async function handler(req, res) {
   const { id } = req.query
@@ -9,9 +9,7 @@ export default async function handler(req, res) {
     const { data, error } = await sb.from('proposals').select('*').eq('id', id).single()
     if (error || !data) return res.status(404).json({ error: 'Not found' })
 
-    if (isAuthed(req)) {
-      return res.status(200).json({ ...data, field_token: signFieldToken(data.id) })
-    }
+    if (isAuthed(req)) return res.status(200).json(data)
     return res.status(200).json(redact(data))
   }
 

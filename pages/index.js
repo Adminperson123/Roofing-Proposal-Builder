@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
-import { calcPrices, DEFAULT_SETTINGS } from '../lib/pricing'
+import { calcPrices, DEFAULT_SETTINGS, DEFAULT_TEMPLATES } from '../lib/pricing'
 
 const ADDON_DEFS = [
   { id:'icewater',  label:'Ice & Water Shield Upgrade', icon:'🧊' },
@@ -200,7 +200,7 @@ export default function Home() {
       {tab === 'dashboard' && <OwnerDashboard onOpen={setOpenProposal} onGoBuild={() => { setTab('builder'); reset() }} />}
       {tab === 'proposals' && <ProposalsTab onOpenBuilder={() => { setTab('builder'); reset() }} onOpen={setOpenProposal} />}
       {tab === 'customers' && <CustomersTab onOpen={setOpenProposal} />}
-      {tab === 'inspections' && <InspectionsTab reps={settings?.reps || []} />}
+      {tab === 'inspections' && <InspectionsTab />}
       {tab === 'reps'      && <RepsTab />}
       {tab === 'settings'  && settings && <SettingsTab initial={settings} />}
 
@@ -1434,11 +1434,7 @@ function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
 }
 
 /* ─────────────── SEND MODAL (v3.7 send + v3.7.1 language toggle) ─────────────── */
-const DEFAULT_TEMPLATES = {
-  smsBody: "Hi {{firstName}}, this is {{rep}} at Good People Roofing. Here's your roofing proposal #{{propNum}}: {{link}}\n\nIt has three options to choose from — reply with any questions.",
-  emailSubject: "Your Good People Roofing proposal #{{propNum}}",
-  emailBody: "Hi {{firstName}},\n\nThank you for the opportunity to earn your business. Your personalized roofing proposal is ready — it walks through three package options, all backed by the same crew and the same workmanship guarantee.\n\nView your proposal here:\n{{link}}\n\nReply to this email or call us any time with questions.\n\n— {{rep}}, Good People Roofing",
-}
+// DEFAULT_TEMPLATES is imported from lib/pricing — single source of truth.
 
 function fillTemplate(tpl, vars) {
   return String(tpl || '').replace(/\{\{(\w+)\}\}/g, (_, k) => (k in vars ? vars[k] : `{{${k}}}`))

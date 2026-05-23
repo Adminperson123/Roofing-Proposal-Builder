@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPR Proposal Builder — Roadmap &amp; Architecture</title>
+  <meta name="description" content="The Good People Roofing AI-native proposal system, designed and built by ParaWav AI. Architecture mind map, feature inventory, and what we've shipped." />
+  <meta name="robots" content="noindex" />
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+
+  <style>
+    /* ── Brand vocabulary ── */
+    :root {
+      --navy:    #0C1C38;
+      --navy2:   #16305E;
+      --crimson: #B01E17;
+      --crimsonH:#D4251C;
+      --gold:    #D4960E;
+      --goldL:   #F0B429;
+      --cream:   #F7F6F3;
+      --text:    #1A1A2E;
+      --mute:    #4A5568;
+      --light:   #9CA3AF;
+      --bord:    #E2E0DB;
+      --success: #10B981;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--cream); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    a { color: var(--crimson); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #fff; border: 1px solid var(--bord); border-radius: 4px; padding: 1px 6px; font-size: 88%; }
+
+    /* ── Layout ── */
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0 22px; }
+    section { padding: 64px 0; }
+    section + section { border-top: 1px solid var(--bord); }
+    .eyebrow { font-size: 11px; font-weight: 900; letter-spacing: 2.4px; color: var(--crimson); text-transform: uppercase; margin-bottom: 10px; }
+    h1 { font-size: 44px; font-weight: 900; line-height: 1.05; letter-spacing: -0.5px; }
+    h2 { font-size: 30px; font-weight: 900; color: var(--navy); letter-spacing: -0.3px; margin-bottom: 8px; }
+    h3 { font-size: 17px; font-weight: 900; color: var(--navy); margin-bottom: 6px; }
+    p.lede { font-size: 17px; color: var(--mute); max-width: 680px; line-height: 1.65; }
+    p { color: var(--mute); }
+
+    /* ── Hero ── */
+    .hero { background: linear-gradient(135deg, #0a1428 0%, var(--navy) 50%, var(--navy2) 100%); color: #fff; padding: 56px 22px 64px; border-bottom: 5px solid var(--crimson); position: relative; overflow: hidden; }
+    .hero::after { content: ''; position: absolute; right: -120px; top: -120px; width: 360px; height: 360px; border-radius: 50%; background: radial-gradient(circle, rgba(212,150,14,.15), transparent 70%); pointer-events: none; }
+    .hero-inner { max-width: 1100px; margin: 0 auto; position: relative; }
+    .hero-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+    .hero-brand img { height: 56px; background: #fff; border-radius: 9px; padding: 5px; }
+    .hero-brand-text strong { color: var(--gold); font-size: 14px; font-weight: 900; letter-spacing: 1.6px; display: block; }
+    .hero-brand-text span { color: rgba(255,255,255,.5); font-size: 11px; letter-spacing: 1.6px; }
+    .hero h1 { color: #fff; max-width: 760px; }
+    .hero h1 em { color: var(--goldL); font-style: normal; }
+    .hero .lede { color: rgba(255,255,255,.78); margin-top: 18px; font-size: 18px; max-width: 720px; }
+    .hero-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 36px; max-width: 800px; }
+    .hero-stat { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 13px; padding: 16px 18px; }
+    .hero-stat-n { font-size: 28px; font-weight: 900; color: var(--gold); }
+    .hero-stat-l { font-size: 11px; font-weight: 700; color: rgba(255,255,255,.6); letter-spacing: .8px; margin-top: 4px; text-transform: uppercase; }
+
+    /* ── Diagram containers ── */
+    .diagram { background: #fff; border: 1px solid var(--bord); border-radius: 16px; padding: 22px 18px; margin-top: 22px; overflow-x: auto; box-shadow: 0 2px 14px rgba(0,0,0,.04); }
+    .diagram.dark { background: var(--navy); border-color: var(--navy); }
+    .diagram .mermaid { font-family: 'Segoe UI', system-ui, sans-serif !important; min-width: 600px; }
+
+    /* ── Feature grid ── */
+    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .feat { background: #fff; border: 1px solid var(--bord); border-left: 4px solid var(--crimson); border-radius: 12px; padding: 18px 20px; transition: transform .15s, box-shadow .15s; }
+    .feat:nth-child(3n+2) { border-left-color: var(--gold); }
+    .feat:nth-child(3n) { border-left-color: var(--success); }
+    .feat:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.08); }
+    .feat-icon { font-size: 22px; margin-bottom: 8px; }
+    .feat p { font-size: 13.5px; color: var(--mute); line-height: 1.55; }
+
+    /* ── Tech stack ── */
+    .stack { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 22px; }
+    .tech { background: #fff; border: 1px solid var(--bord); border-radius: 10px; padding: 14px 12px; text-align: center; }
+    .tech-name { font-size: 13px; font-weight: 900; color: var(--navy); }
+    .tech-role { font-size: 10.5px; color: var(--mute); margin-top: 3px; }
+
+    /* ── Timeline ── */
+    .timeline { margin-top: 22px; position: relative; padding-left: 36px; }
+    .timeline::before { content: ''; position: absolute; left: 11px; top: 6px; bottom: 6px; width: 2px; background: linear-gradient(180deg, var(--crimson), var(--gold), var(--success)); }
+    .tl-item { position: relative; padding-bottom: 24px; }
+    .tl-dot { position: absolute; left: -32px; top: 4px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--crimson); }
+    .tl-item:nth-child(2) .tl-dot { border-color: var(--gold); }
+    .tl-item:nth-child(3) .tl-dot { border-color: var(--success); }
+    .tl-item:nth-child(4) .tl-dot { border-color: var(--navy); }
+    .tl-date { font-size: 11px; font-weight: 900; color: var(--crimson); letter-spacing: 1.4px; text-transform: uppercase; }
+    .tl-item:nth-child(2) .tl-date { color: var(--gold); }
+    .tl-item:nth-child(3) .tl-date { color: var(--success); }
+    .tl-item:nth-child(4) .tl-date { color: var(--navy); }
+    .tl-item h3 { margin-top: 4px; }
+    .tl-item ul { margin: 8px 0 0 18px; }
+    .tl-item li { font-size: 13.5px; color: var(--mute); margin-bottom: 4px; line-height: 1.55; }
+    .tl-item li code { font-size: 12px; }
+
+    /* ── Audit panel ── */
+    .audit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 24px; }
+    .audit-card { background: #fff; border: 1px solid var(--bord); border-top: 4px solid var(--navy); border-radius: 12px; padding: 16px 18px; }
+    .audit-card.cleaned { border-top-color: var(--success); }
+    .audit-card.tuned { border-top-color: var(--gold); }
+    .audit-card.flagged { border-top-color: var(--crimson); }
+    .audit-card .big { font-size: 30px; font-weight: 900; color: var(--navy); line-height: 1; margin-bottom: 4px; }
+    .audit-card.cleaned .big { color: var(--success); }
+    .audit-card.tuned .big { color: var(--gold); }
+    .audit-card.flagged .big { color: var(--crimson); }
+    .audit-card .label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; color: var(--mute); text-transform: uppercase; margin-bottom: 9px; }
+    .audit-card ul { margin-left: 16px; margin-top: 8px; }
+    .audit-card li { font-size: 12.5px; color: var(--mute); margin-bottom: 4px; line-height: 1.55; }
+
+    /* ── Open items ── */
+    .open-list { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .open-card { background: #fff; border: 1px solid var(--bord); border-left: 4px solid var(--gold); border-radius: 11px; padding: 14px 18px; }
+    .open-card h4 { font-size: 14px; font-weight: 900; color: var(--navy); margin-bottom: 4px; }
+    .open-card p { font-size: 12.5px; line-height: 1.55; }
+    .open-card.high { border-left-color: var(--crimson); }
+    .open-card.med { border-left-color: var(--gold); }
+    .open-card.low { border-left-color: var(--success); }
+
+    /* ── Footer ── */
+    footer { background: var(--navy); color: rgba(255,255,255,.7); text-align: center; padding: 32px 22px; font-size: 12.5px; }
+    footer strong { color: var(--gold); font-weight: 900; letter-spacing: 1.1px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 760px) {
+      h1 { font-size: 32px; }
+      h2 { font-size: 24px; }
+      .hero { padding: 40px 18px 48px; }
+      .hero-stats { grid-template-columns: 1fr 1fr; }
+      .feat-grid, .audit-grid { grid-template-columns: 1fr; }
+      .stack { grid-template-columns: 1fr 1fr; }
+      .open-list { grid-template-columns: 1fr; }
+      section { padding: 44px 0; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ─── HERO ─────────────────────────────────────────────── -->
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-brand">
+        <img src="/logo.png" alt="Good People Roofing" />
+        <div class="hero-brand-text">
+          <strong>GOOD PEOPLE ROOFING</strong>
+          <span>PROPOSAL BUILDER · BUILT BY PARAWAV AI</span>
+        </div>
+      </div>
+      <h1>A roofing proposal that <em>writes itself</em>, signs itself, and follows itself up.</h1>
+      <p class="lede">
+        From the moment a rep types in a customer's name to the moment the homeowner e-signs from their phone, every step
+        is automated, AI-assisted, and CRM-synced. This is the architecture, the feature inventory, and the running log
+        of everything that's been shipped to production.
+      </p>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="hero-stat-n">14</div><div class="hero-stat-l">features shipped</div></div>
+        <div class="hero-stat"><div class="hero-stat-n">5</div><div class="hero-stat-l">pages of PDF</div></div>
+        <div class="hero-stat"><div class="hero-stat-n">14</div><div class="hero-stat-l">slides of pitch deck</div></div>
+        <div class="hero-stat"><div class="hero-stat-n">&lt;60s</div><div class="hero-stat-l">to generate a proposal</div></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── ARCHITECTURE MIND MAP ──────────────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">The map</div>
+    <h2>Everything that exists, on one page</h2>
+    <p class="lede">Every node below is a real, deployed surface. The system has four parts — what the rep uses, what the customer sees, the back-end logic, and the external services it ties into.</p>
+
+    <div class="diagram dark">
+      <div class="mermaid">
+mindmap
+  root((GPR Proposal<br/>Builder))
+    ::icon(fa fa-users)
+    Admin app
+      Build wizard
+        Customer info
+        Roof scope
+        Photo upload
+        Review + pricing
+      Proposals list
+      Customers
+        Project timelines
+      Inspections
+      Team performance
+      Settings
+        Pricing
+        Templates
+        Change orders
+    Customer surfaces
+      /p/[id] proposal
+        3 tier packages
+        Customer upgrades
+        EN/ES content
+        E-signature
+      /c/[token] timeline
+      /present/[id] deck
+      Multi-page PDF
+    Backend API
+      AI generation
+      Send SMS/Email
+      Translation
+      Photo vision
+      48hr follow-up cron
+      Accept + sign
+    Data
+      Supabase Postgres
+        proposals
+        customer_tokens
+        inspections
+        settings
+      Storage
+        proposal-photos
+        brand-assets
+    Integrations
+      OpenAI
+        GPT-4 Turbo
+        GPT-4o vision
+      GoHighLevel
+        Contacts
+        Opportunities
+        SMS + Email
+      Vercel
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── THE FLOW ───────────────────────────────────────────── -->
+  <section class="wrap" style="padding-top:0;">
+    <div class="eyebrow">The journey</div>
+    <h2>How a lead becomes a signed deal</h2>
+    <p class="lede">Every step on this path is automated, gated, and logged. The rep adds judgment in three places only: confirming the scope, reviewing the AI's tier copy, and pressing Send.</p>
+
+    <div class="diagram">
+      <div class="mermaid">
+flowchart LR
+  L([Lead lands]):::start --> B[Rep builds<br/>scope + photos]
+  B --> V[Analyze with<br/>AI vision]
+  V --> G[Generate 3<br/>tier packages]
+  G --> R[Review + override<br/>pricing]
+  R --> S[Send SMS/Email<br/>EN or ES]
+  S --> C{{Customer opens}}
+  C --> A[Customer picks tier<br/>+ upgrades + e-signs]
+  C -. no response in 48h .-> F[Auto follow-up SMS]
+  F --> C
+  A --> T[Project timeline<br/>shared with customer]
+  T --> I([Install]):::end
+  A -. accepted .-> GHL[GHL CRM<br/>opportunity won]
+
+  classDef start fill:#0C1C38,stroke:#0C1C38,color:#fff
+  classDef end fill:#10B981,stroke:#10B981,color:#fff
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FEATURE INVENTORY ──────────────────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">What it does</div>
+    <h2>14 production-grade features</h2>
+    <p class="lede">Each card below is a deployed, customer-touching capability — not a roadmap promise.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="feat-icon">🧠</div>
+        <h3>AI tier generation</h3>
+        <p>GPT-4 Turbo writes 3 polished package options (Essential / Performance / Signature) tailored to the customer's exact scope, in seconds.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">👁️</div>
+        <h3>AI roof analysis</h3>
+        <p>GPT-4o reads photos the rep snaps on-site and pre-fills squares, pitch, material guess, condition score, and recommended add-ons.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">💰</div>
+        <h3>Live pricing engine</h3>
+        <p>Per-square shingle/tile pricing, automatic pitch / story / layer adders, solar per-panel rate, manual price overrides, and tier-visibility control.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">✨</div>
+        <h3>Customer-side upgrades</h3>
+        <p>The customer toggles optional change orders directly on the proposal page; the price recalculates live and folds into their final signed total.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">📨</div>
+        <h3>Multi-channel send</h3>
+        <p>One modal sends an editable text message + email through GoHighLevel — including an EN/ES language toggle powered by OpenAI translation.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">✍️</div>
+        <h3>E-sign on the page</h3>
+        <p>Finger-on-glass signature captured, stamped with IP + timestamp, and locked into the proposal. No DocuSign round-trip.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">📅</div>
+        <h3>Project timeline</h3>
+        <p>Each customer gets a private <code>/c/[token]</code> link showing where their roof project stands — milestones the rep edits live.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">📄</div>
+        <h3>5-page narrative PDF</h3>
+        <p>Auto-generated PDF that mirrors the web proposal: cover, about, families, materials, packages, benefits, cost of waiting, payment schedule.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🖥️</div>
+        <h3>Presentation mode</h3>
+        <p>14-slide deck the rep walks the customer through in-home — swipe, keyboard, and tap nav, optimized for phone/tablet.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🔁</div>
+        <h3>48-hour follow-up</h3>
+        <p>If the customer viewed but didn't sign, a friendly nudge SMS goes out automatically on the second day — once, never twice.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🤖</div>
+        <h3>AI proposal editor</h3>
+        <p>The rep types <em>"drop Best 5% and swap the rep to David"</em> in plain English; the AI translates that into structured edits + a versioned save.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🔗</div>
+        <h3>GHL CRM sync</h3>
+        <p>Contacts, custom fields, tags, and opportunity stages flow into GoHighLevel automatically when a proposal is sent, viewed, or signed.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">🔍</div>
+        <h3>Site inspection module</h3>
+        <p>Step-by-step on-site inspection separate from the proposal flow, with photo capture and a generated report PDF.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon">📊</div>
+        <h3>Owner dashboard</h3>
+        <p>Live KPIs — revenue closed, conversion %, open pipeline, hot leads, rep leaderboard, accepted tier mix, and a live activity feed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── TECH STACK ─────────────────────────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">What it runs on</div>
+    <h2>A modern, batteries-included stack</h2>
+    <p class="lede">Every piece below is production-tested at scale by companies bigger than us. We don't run our own infrastructure for anything.</p>
+
+    <div class="stack">
+      <div class="tech"><div class="tech-name">Next.js 14</div><div class="tech-role">React framework</div></div>
+      <div class="tech"><div class="tech-name">Vercel</div><div class="tech-role">Hosting + CDN</div></div>
+      <div class="tech"><div class="tech-name">Supabase</div><div class="tech-role">Postgres + Storage</div></div>
+      <div class="tech"><div class="tech-name">OpenAI</div><div class="tech-role">GPT-4o + Turbo</div></div>
+      <div class="tech"><div class="tech-name">GoHighLevel</div><div class="tech-role">CRM + SMS + Email</div></div>
+    </div>
+  </section>
+
+  <!-- ─── SHIPPED TIMELINE ───────────────────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">What we've built</div>
+    <h2>Recent shipping log</h2>
+    <p class="lede">Most-recent-first. Each entry is one production deploy you can verify in commit history.</p>
+
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">Latest — Audit &amp; cleanup pass</div>
+        <h3>Codebase consolidation, Supabase tuning, this roadmap</h3>
+        <ul>
+          <li>Two parallel agent audits (<code>legacy-analyst</code> + <code>security-auditor</code>) plus Supabase's official performance + security advisors.</li>
+          <li>Removed ~300 lines of dead code — <code>styles/globals.css</code>, the orphaned <code>/api/proposal/[id]/analyze</code> route, duplicate template constants, unused exports.</li>
+          <li>Dropped 7 unused/duplicate database indexes; pinned the <code>set_updated_at</code> function's search path (Supabase performance advisor recommendations).</li>
+          <li>This roadmap document — <code>/roadmap.html</code>, deploys with the app.</li>
+        </ul>
+      </div>
+
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">May 21–22 — Client review + mobile fixes</div>
+        <h3>Beltran's walk-through framework, the phone-friendly app</h3>
+        <ul>
+          <li><strong>Proposal Opportunity Card restructure</strong> — every per-proposal action (View, Presentation, PDF, Copy, Send, Customer timeline) in one clean grid; Field Link removed.</li>
+          <li><strong>Presentation rebuilt</strong> to follow Beltran's exact 14-slide framework: Cover → About → Families → Materials → Understanding the roof → Same workmanship/3 levels → Essential → Performance → Signature → Benefits → Cost of doing nothing → Next steps → It's an experience → Close.</li>
+          <li><strong>PDF rebuilt</strong> to the same 5-page narrative framework.</li>
+          <li><strong>"Mark as not moving forward"</strong> control on every proposal.</li>
+          <li><strong>Mobile fix</strong> — the dashboard squish bug (4 unwrapped tables forcing iOS shrink-to-fit) and the presentation overflow on short phone viewports.</li>
+        </ul>
+      </div>
+
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">May 20 — Feature sprint</div>
+        <h3>Eight v3.x features in one batch</h3>
+        <ul>
+          <li><strong>v3.6</strong> — Customer-timeline admin editor + writable <code>/c/[token]</code> link.</li>
+          <li><strong>v3.7 + v3.7.1</strong> — Send modal with editable templates, email channel through GHL, EN/ES language toggle.</li>
+          <li><strong>v3.4</strong> — Customer-toggleable change orders on <code>/p/[id]</code>; "Analyze with AI" button in the photo step.</li>
+          <li><strong>v3.3</strong> — Pricing depth (solar per-panel, tier-visibility picker, manual price override) + multi-page PDF with the Cost of Doing Nothing section.</li>
+          <li>Change-orders editor in Settings + public <code>/api/change-orders</code>.</li>
+        </ul>
+      </div>
+
+      <div class="tl-item">
+        <div class="tl-dot"></div>
+        <div class="tl-date">Earlier — Foundation</div>
+        <h3>v1 through v3.2 base</h3>
+        <ul>
+          <li>AI tier generation, customer-facing <code>/p/[id]</code> page with three tier cards, e-signature, AI proposal editor.</li>
+          <li>Site Inspections subsystem (parallel module).</li>
+          <li>Owner dashboard with KPIs, rep leaderboard, hot leads, live activity.</li>
+          <li>GHL contact upsert, SMS send, opportunity sync on acceptance.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── AUDIT & OPTIMIZATION RESULTS ───────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">Quality posture</div>
+    <h2>What we audited, what we tuned</h2>
+    <p class="lede">Three independent passes — code structure, security, and database — converged into a small set of high-confidence actions.</p>
+
+    <div class="audit-grid">
+      <div class="audit-card cleaned">
+        <div class="label">Code cleaned</div>
+        <div class="big">6</div>
+        <p style="font-size:12.5px;line-height:1.55;">Dead-code findings executed:</p>
+        <ul>
+          <li><code>styles/globals.css</code> — entire file deleted (no <code>className</code> referenced it)</li>
+          <li><code>/api/proposal/[id]/analyze</code> — entire route deleted (replaced by stateless <code>/api/analyze-photos</code>)</li>
+          <li>Duplicate <code>DEFAULT_TEMPLATES</code> declaration consolidated into <code>lib/pricing.js</code></li>
+          <li>Orphaned <code>monthlyPayment</code> export removed</li>
+          <li>Dead <code>field_token</code> injection stripped from <code>/api/proposal/[id]</code> GET</li>
+          <li>Unused <code>reps</code> prop on <code>&lt;InspectionsTab&gt;</code> call removed</li>
+        </ul>
+      </div>
+
+      <div class="audit-card tuned">
+        <div class="label">Supabase tuned</div>
+        <div class="big">9</div>
+        <p style="font-size:12.5px;line-height:1.55;">Database changes applied via migration:</p>
+        <ul>
+          <li>Dropped 7 unused indexes (5 on <code>proposals</code>, 1 on <code>inspections</code>, plus 1 follow-up window)</li>
+          <li>Dropped 2 duplicate-index pairs flagged by the performance advisor</li>
+          <li>Pinned <code>public.set_updated_at()</code> search path (mutable-search-path security warning resolved)</li>
+        </ul>
+      </div>
+
+      <div class="audit-card flagged">
+        <div class="label">Security — for review</div>
+        <div class="big">16</div>
+        <p style="font-size:12.5px;line-height:1.55;">Findings logged. Top items needing decisions:</p>
+        <ul>
+          <li>Rotate <code>ADMIN_PASSWORD</code> + <code>AUTH_SECRET</code> in Vercel (the old password lives in git history)</li>
+          <li>Flip <code>redact()</code> in <code>/api/proposal/[id]</code> from blacklist to allow-list</li>
+          <li>Add a shared-secret to <code>/api/webhook</code> (currently unauthenticated)</li>
+          <li>Add rate-limiting to <code>/login</code>, <code>/accept</code>, <code>/view</code></li>
+          <li>Make <code>proposal-photos</code> bucket private + serve signed URLs</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── OPEN ITEMS ─────────────────────────────────────────── -->
+  <section class="wrap">
+    <div class="eyebrow">What's next</div>
+    <h2>Open items — by priority</h2>
+    <p class="lede">Bucketed by urgency. The high-priority items are things only you (Oscar) or Beltran can do — they need credentials or business decisions, not more code.</p>
+
+    <div class="open-list">
+      <div class="open-card high">
+        <h4>🔴 Rotate ADMIN_PASSWORD in Vercel</h4>
+        <p>The previous value lives in git history. Set a fresh one in Vercel env vars and share with the team. One-line click in Vercel project settings.</p>
+      </div>
+      <div class="open-card high">
+        <h4>🔴 Set solar per-panel rate</h4>
+        <p>Confirm the rate with the client, then enter it in Settings → Add-On Prices. The per-panel pricing mechanism is dormant at $0 and falls back to flat pricing until set.</p>
+      </div>
+      <div class="open-card high">
+        <h4>🔴 Tighten public-API allow-list</h4>
+        <p>Convert <code>redact()</code> in <code>/api/proposal/[id]</code> to an explicit allow-list of customer-facing fields so internal rep notes and AI cost math don't leak with the proposal URL.</p>
+      </div>
+      <div class="open-card med">
+        <h4>🟡 Lock the GHL webhook</h4>
+        <p>Add a shared-secret bearer or HMAC to <code>/api/webhook</code> so untrusted text can't enter the AI prompt pipeline. Requires coordinating the secret on the GHL side.</p>
+      </div>
+      <div class="open-card med">
+        <h4>🟡 Rate-limit critical endpoints</h4>
+        <p>Add <code>@upstash/ratelimit</code> to <code>/api/auth/login</code> (brute-force protection) and <code>/api/proposal/[id]/accept</code>/<code>view</code> (rep-SMS spam protection + OpenAI cost protection).</p>
+      </div>
+      <div class="open-card med">
+        <h4>🟡 Load change-orders starter list</h4>
+        <p>In Settings → Change Orders, click "Load starter list" and price each item. They don't appear to customers on <code>/p/[id]</code> until priced above $0.</p>
+      </div>
+      <div class="open-card low">
+        <h4>🟢 Make proposal-photos bucket private</h4>
+        <p>Switch storage bucket to private + serve via signed URLs gated by the proposal-id check. Closes the photo-enumeration vector.</p>
+      </div>
+      <div class="open-card low">
+        <h4>🟢 Vercel Hobby → Pro</h4>
+        <p>$20/mo unlocks hourly cron (current daily window means follow-up SMS can fire 36–96h after view, not the ideal 48–72h band).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ─────────────────────────────────────────────── -->
+  <footer>
+    <p>Designed, built, and operated by <strong>PARAWAV AI</strong> · <a href="mailto:admin@parawavai.com" style="color:rgba(255,255,255,.7);">admin@parawavai.com</a></p>
+    <p style="margin-top:6px;font-size:11px;opacity:.55;">This page lives at <code style="color:rgba(255,255,255,.65);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);">/roadmap.html</code> and updates with every deploy.</p>
+  </footer>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        fontFamily: 'Segoe UI, system-ui, sans-serif',
+        primaryColor: '#0C1C38',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#D4960E',
+        lineColor: '#D4960E',
+        secondaryColor: '#16305E',
+        tertiaryColor: '#B01E17',
+        background: 'transparent',
+        mainBkg: '#16305E',
+        secondBkg: '#0C1C38',
+        textColor: '#0C1C38',
+      },
+      mindmap: { padding: 16, maxNodeWidth: 220 },
+      flowchart: { curve: 'basis', useMaxWidth: true, htmlLabels: true },
+    });
+  </script>
+</body>
+</html>
