@@ -283,6 +283,7 @@ function StepCustomer({ customer, setCustomer, reps = [] }) {
             {customer.lat && customer.lng && <span className="addr-pill">{customer.lat.toFixed(4)}, {customer.lng.toFixed(4)}</span>}
           </div>
         )}
+        <PropertyMap lat={customer.lat} lng={customer.lng} address={customer.address} />
         <div className="field full">
           <label>Inspection Notes / Project Detail</label>
           <textarea rows={3} value={customer.notes} onChange={e=>set('notes',e.target.value)} placeholder="Auto-template based on roof type — edit as needed" />
@@ -1315,8 +1316,11 @@ function Field({ label, value, onChange, placeholder, full, type='text' }) {
   )
 }
 
-// Address autocomplete via OpenStreetMap Nominatim (free, no key).
-// Swap baseUrl + parsing later if upgrading to Google Places.
+// Address autocomplete. Talks to /api/places/autocomplete, which uses Google
+// Places (New) when GOOGLE_MAPS_API_KEY is set and falls back to OpenStreetMap
+// Nominatim otherwise — so this component is provider-agnostic. Google items
+// arrive as { compact, placeId } and resolve coords via /api/places/details on
+// pick; Nominatim items arrive with { compact, structured } inline.
 function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full }) {
   const [open, setOpen] = useState(false)
   const [results, setResults] = useState([])
@@ -1330,25 +1334,12 @@ function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full
     if (q.length < 3 || q === lastQuery.current) return
     lastQuery.current = q
     setLoading(true)
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=us&limit=5&q=${encodeURIComponent(q)}`
-    fetch(url, { headers: { 'Accept-Language': 'en' } })
+    fetch(`/api/places/autocomplete?q=${encodeURIComponent(q)}`)
       .then(r => r.json())
       .then(data => {
-        const formatted = (data || [])
-          .map(d => ({
-            label: d.display_name,
-            compact: formatAddress(d.address),
-            structured: {
-              city:  d.address?.city || d.address?.town || d.address?.village || d.address?.hamlet || d.address?.suburb || '',
-              state: d.address?.state || '',
-              zip:   d.address?.postcode || '',
-              lat:   d.lat ? Number(d.lat) : null,
-              lng:   d.lon ? Number(d.lon) : null,
-            },
-          }))
-          .filter(r => r.compact)
-        setResults(formatted)
-        setOpen(formatted.length > 0)
+        const items = (data.suggestions || []).filter(s => s.compact)
+        setResults(items)
+        setOpen(items.length > 0)
         setHover(-1)
       })
       .catch(() => { setResults([]); setOpen(false) })
@@ -1361,11 +1352,19 @@ function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full
     debRef.current = setTimeout(() => fetchSuggestions(v), 220)
   }
 
-  function pick(item) {
+  async function pick(item) {
     onChange(item.compact)
-    if (onPick && item.structured) onPick(item.structured)
     setOpen(false); setResults([]); setHover(-1)
     inputRef.current?.blur()
+    if (item.structured) {
+      onPick && onPick(item.structured)            // Nominatim: coords inline
+    } else if (item.placeId) {
+      try {                                          // Google: resolve coords now
+        const d = await fetch(`/api/places/details?placeId=${encodeURIComponent(item.placeId)}`).then(r => r.json())
+        if (d.compact) onChange(d.compact)
+        if (onPick && d.structured) onPick(d.structured)
+      } catch { /* keep the typed text if details lookup fails */ }
+    }
   }
 
   return (
@@ -1410,15 +1409,28 @@ function AddressAutocomplete({ label, value, onChange, onPick, placeholder, full
   )
 }
 
-function formatAddress(a) {
-  if (!a) return ''
-  const street = [a.house_number, a.road].filter(Boolean).join(' ')
-  const city = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || ''
-  const state = a.state || ''
-  const zip = a.postcode || ''
-  if (!street || !city) return ''
-  return [street, city, state, zip].filter(Boolean).join(', ')
+// Satellite/aerial preview of the selected property. Renders the image from
+// /api/staticmap (server-proxied Google Static Maps). When no GOOGLE_MAPS_API_KEY
+// is configured that route 404s, so onError simply hides the whole block —
+// the feature lights up automatically once the key is added, no code change.
+function PropertyMap({ lat, lng, address }) {
+  const [failed, setFailed] = useState(false)
+  const hasCoords = lat != null && lng != null
+  const target = hasCoords ? `lat=${lat}&lng=${lng}` : (address ? `address=${encodeURIComponent(address)}` : '')
+  if (!target || failed) return null
+  return (
+    <div className="field full addr-map">
+      <div className="addr-map-lbl">🛰 AERIAL VIEW — CONFIRM THE RIGHT PROPERTY</div>
+      <img
+        src={`/api/staticmap?${target}`}
+        alt="Property aerial view"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  )
 }
+
 function Counter({ label, hint, value, onMinus, onPlus, onChange }) {
   return (
     <div className="scope-box">
@@ -1689,6 +1701,7 @@ function InspectionsTab() {
   const [error, setError]   = useState('')
   const [showForm, setShow] = useState(false)
   const [form, setForm]     = useState({ customer_name: '', customer_address: '', customer_phone: '', rep_name: '' })
+  const [pin, setPin]       = useState(null) // coords from address pick, for the aerial preview
   const [busy, setBusy]     = useState(false)
 
   function load() {
@@ -1729,9 +1742,18 @@ function InspectionsTab() {
             <div className="grid2">
               <Field label="Customer Name *"   value={form.customer_name}    onChange={v => set('customer_name', v)}    placeholder="Jane Smith" />
               <Field label="Phone"             value={form.customer_phone}   onChange={v => set('customer_phone', v)}   placeholder="(909) 555-0100" />
-              <Field full label="Property Address *" value={form.customer_address} onChange={v => set('customer_address', v)} placeholder="123 Main St, Yucaipa, CA" />
+              <AddressAutocomplete full label="Property Address *" value={form.customer_address} onChange={v => set('customer_address', v)} onPick={setPin} placeholder="Start typing the property address…" />
               <Field label="Sales Rep"         value={form.rep_name}         onChange={v => set('rep_name', v)}         placeholder="Carlos M." />
             </div>
+            <PropertyMap lat={pin?.lat} lng={pin?.lng} address={form.customer_address} />
+            {pin && (pin.city || pin.state || pin.zip) && (
+              <div className="addr-derived" style={{ marginTop: 4 }}>
+                <span className="addr-derived-lbl">Auto-detected:</span>
+                {pin.city && <span className="addr-pill">📍 {pin.city}</span>}
+                {pin.state && <span className="addr-pill">{pin.state}</span>}
+                {pin.zip && <span className="addr-pill">{pin.zip}</span>}
+              </div>
+            )}
             <button className="btn-mega" onClick={create} disabled={busy} style={{marginTop:14}}>
               {busy ? '⏳ Creating…' : '🔍 Start Inspection'}
             </button>
@@ -2434,6 +2456,9 @@ function GlobalCSS() {
       .addr-derived{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:9px;font-size:12px}
       .addr-derived-lbl{color:#065F46;font-weight:800;letter-spacing:.5px;text-transform:uppercase;font-size:10px;margin-right:2px}
       .addr-pill{display:inline-block;padding:3px 9px;background:#fff;border:1px solid #A7F3D0;border-radius:20px;font-weight:700;color:#065F46;font-size:11px}
+      .addr-map{display:flex;flex-direction:column;gap:6px}
+      .addr-map-lbl{font-size:10px;font-weight:800;letter-spacing:.5px;color:var(--mute)}
+      .addr-map img{width:100%;max-width:560px;border-radius:12px;border:1px solid var(--bord);display:block;box-shadow:0 2px 12px rgba(0,0,0,.06)}
       .rep-link{background:none;border:none;color:var(--mute);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;margin-left:4px}
       .rep-link:hover{color:var(--crimson)}
       .rep-row{display:flex;gap:8px;align-items:center}
