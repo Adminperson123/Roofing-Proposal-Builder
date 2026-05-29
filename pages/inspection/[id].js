@@ -179,7 +179,7 @@ export default function InspectionForm() {
 
             {section.key === 'access'       && <SectionAccess data={sectionData} onChange={p => patchSection('access', p)} />}
             {section.key === 'system'       && <SectionSystem data={sectionData} onChange={p => patchSection('system', p)} />}
-            {section.key === 'measure'      && <SectionMeasure data={sectionData} onChange={p => patchSection('measure', p)} />}
+            {section.key === 'measure'      && <SectionMeasure data={sectionData} onChange={p => patchSection('measure', p)} address={insp.customer_address} />}
             {section.key === 'damage'       && <SectionDamage data={sectionData} onChange={p => patchSection('damage', p)} />}
             {section.key === 'penetrations' && <SectionPenetrations data={sectionData} onChange={p => patchSection('penetrations', p)} />}
             {section.key === 'attic'        && <SectionAttic data={sectionData} onChange={p => patchSection('attic', p)} />}
@@ -367,9 +367,46 @@ function SectionSystem({ data, onChange }) {
   )
 }
 
-function SectionMeasure({ data, onChange }) {
+function SectionMeasure({ data, onChange, address }) {
+  const [estimating, setEstimating] = useState(false)
+  const [est, setEst] = useState(null) // { available, squares, pitch, planes, imageryYear, imageryQuality } | { available:false, reason }
+
+  async function estimateFromAerial() {
+    if (!address) { setEst({ available: false, reason: 'add the property address on the Customer step first' }); return }
+    setEstimating(true); setEst(null)
+    try {
+      const r = await fetch(`/api/solar?address=${encodeURIComponent(address)}`).then(x => x.json())
+      setEst(r)
+      if (r.available) {
+        const patch = { method: 'aerial' }
+        if (r.squares != null) patch.squares = String(r.squares)
+        if (r.pitch != null) patch.pitch = String(r.pitch)
+        if (r.planes != null) patch.planes = String(r.planes)
+        onChange(patch)
+      }
+    } catch (e) {
+      setEst({ available: false, reason: e.message })
+    } finally { setEstimating(false) }
+  }
+
   return (
     <>
+      <div style={{ marginBottom: 14, padding: '12px 14px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 10 }}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={estimateFromAerial} disabled={estimating} style={{ width: '100%' }}>
+          {estimating ? '⏳ Measuring roof…' : '📐 Estimate from aerial (Google Solar)'}
+        </button>
+        {est && est.available && (
+          <div style={{ marginTop: 10, fontSize: 13, color: '#075985', lineHeight: 1.5 }}>
+            ✓ Filled: <strong>{est.squares} sq</strong> · <strong>{est.pitch}/12</strong> · <strong>{est.planes} facets</strong>
+            {est.imageryYear ? ` · ${est.imageryYear} imagery` : ''}{est.imageryQuality ? ` · ${est.imageryQuality} confidence` : ''}. Adjust if on-site differs.
+          </div>
+        )}
+        {est && !est.available && (
+          <div style={{ marginTop: 10, fontSize: 13, color: '#92400E', lineHeight: 1.5 }}>
+            ⚠ No aerial estimate — {est.reason}. Measure on-site.
+          </div>
+        )}
+      </div>
       <div className="ins-row">
         <div className="ins-field">
           <label>Squares (1 sq = 100 sqft)</label>
