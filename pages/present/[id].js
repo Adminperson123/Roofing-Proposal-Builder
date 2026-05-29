@@ -1,79 +1,39 @@
 /**
  * Presentation mode — /present/[id]
  *
- * Full-screen, swipeable slide deck for in-home presenting. The deck follows
- * the Good People Roofing proposal framework, top-to-bottom:
+ * Full-screen, swipeable slide deck for in-home presenting. The deck now
+ * mirrors the ENTIRE web proposal (/p/[id]) section-for-section so the rep
+ * walks the customer through exactly what the proposal and PDF contain:
  *
- *   Cover → About us → Families we've helped → Materials & partnerships →
- *   Understanding your roof → Same workmanship / 3 quality levels →
- *   Essential → Performance → Signature → Benefits of a new roof →
- *   Cost of doing nothing → Next steps → It's an experience → Close
+ *   Cover → A note from your rep → About → Families → Materials →
+ *   Understanding your roof → Photos → Same workmanship (3 levels) →
+ *   Essential / Performance / Signature → Optional upgrades → Benefits →
+ *   Cost of doing nothing → Next steps → Experience → Guarantee →
+ *   Licensed & insured → What's not included → Payment → Your rep → FAQ →
+ *   Terms → Close
  *
- * This mirrors the section order of the web proposal (/p/[id]) and the PDF so
- * all three formats present the same story. Navigate with the on-screen
- * arrows, keyboard arrows/space, or touch swipe. Dots show progress.
+ * All narrative copy comes from lib/content.js — the single source of truth
+ * shared with the proposal page and the PDF. Edit the words there, once.
+ * Navigate with the on-screen arrows, keyboard arrows/space, or touch swipe.
  */
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
+import {
+  COMPANY, TIER_LABELS, TIER_COLORS, monthly,
+  ABOUT, FAMILIES, TESTIMONIALS, MATERIALS_SECTION, MATERIALS, PARTNERS, SCOPE,
+  QUALITY, BENEFITS_SECTION, BENEFITS, COST, PROCESS_SECTION, PROCESS_STEPS,
+  EXPERIENCE, GUARANTEE, LICENSE_SECTION, LICENSE_BADGES, NOT_INCLUDED_SECTION, NOT_INCLUDED,
+  REP, FAQ_SECTION, FAQS, TERMS, PAYMENT,
+} from '../../lib/content'
 
-const TIERS = ['good', 'better', 'best']
-const TIER_COLOR = { good: '#4A5568', better: '#B01E17', best: '#D4960E' }
-const TIER_LABEL = { good: 'ESSENTIAL', better: 'PERFORMANCE', best: 'SIGNATURE' }
-
-const ABOUT_STATS = [
-  { n: '1,200+', l: 'Roofs installed' },
-  { n: '4.9★', l: 'Average review' },
-  { n: '10+',    l: 'Years serving SoCal' },
-  { n: '100%',   l: 'Cleanup guarantee' },
-]
-const TESTIMONIALS = [
-  { name: 'Maria S.',   city: 'Yucaipa, CA',    text: 'Crew showed up on time, treated my home like their own, and finished a full tear-off in two days.' },
-  { name: 'Daniel R.',  city: 'Redlands, CA',   text: 'Honest pricing, no surprises, and they walked me through every option. Easiest contractor experience ever.' },
-  { name: 'Carolyn P.', city: 'San Bernardino', text: 'Wind storm took out half my ridge. They had a crew here within a week and the workmanship was flawless.' },
-]
-const MATERIALS = [
-  { name: 'GAF',            tag: 'Timberline HDZ / UHDZ shingles' },
-  { name: 'Owens Corning',  tag: 'Duration / Duration COOL series' },
-  { name: 'Westlake Royal', tag: 'Concrete & clay tile' },
-  { name: 'Eagle Roofing',  tag: 'Concrete tile — flat & S-type' },
-  { name: 'Titanium',       tag: 'Synthetic underlayments' },
-  { name: 'Boral',          tag: 'Specialty tile & accessories' },
-]
-const PARTNERS = [
-  { name: 'QXO',              tag: 'National roofing distributor — preferred pricing & faster delivery.' },
-  { name: 'SRS Distribution', tag: 'Largest US roofing distributor — full inventory & warranty support.' },
-]
-const QUALITY_PILLARS = [
-  { t: 'Same crew, every tier', b: 'Installed by our W-2 employees — never day-laborers.' },
-  { t: 'Same standards',        b: 'Same safety practices, same flashing details, same final sweep.' },
-  { t: 'Different materials',   b: 'Shingle composition, tile weight, granule mix, warranty class.' },
-]
-const BENEFITS = [
-  { icon: '🛡', t: 'Protection for decades',  b: 'No more worry about leaks or ceiling stains — 30-year to lifetime warranties.' },
-  { icon: '💰', t: 'Higher resale value',     b: 'A recent roof is a top-three improvement that moves appraisal numbers.' },
-  { icon: '⚡', t: 'Lower energy bills',            b: 'Cool-rated shingles drop attic temps up to 20°F and trim summer A/C costs.' },
-  { icon: '📋', t: 'Insurance peace of mind', b: 'Many SoCal insurers require a roof under 20 years old to keep coverage.' },
-  { icon: '🏡', t: 'Curb appeal',             b: 'Modern color palettes update the whole look of the home from the street.' },
-  { icon: '🌬', t: 'Wind & storm rated',      b: 'Installs rated up to 130 mph wind with ridge vents and drip-edge upgrades.' },
-]
-const PROCESS_STEPS = [
-  { icon: '✍️', t: 'Sign your proposal',         b: 'Pick a tier, sign, and your project is officially scheduled.' },
-  { icon: '📅', t: 'Pre-install walkthrough',    b: 'Your rep confirms colors, pulls permits, and locks the install date.' },
-  { icon: '🚚', t: 'Materials delivered',        b: 'Manufacturer-fresh materials delivered 1–2 days before install.' },
-  { icon: '🔨', t: 'Tear-off & install',         b: 'Old layers off, decking inspected, new system on — most homes in 1–2 days.' },
-  { icon: '✅', t: 'Final inspection & cleanup',       b: 'Magnetic sweep, daily cleanup, and a final walkthrough so you sign off happy.' },
-]
-const COST_STEPS = [
-  { year: 'YEAR 1 OF WAITING',  b: 'Small leaks find weak shingles after the first big storm. You replace a ceiling tile and a section of drywall — $400 to $900 in interior repair.' },
-  { year: 'YEAR 2 OF WAITING',  b: 'Water reaches the decking. Now you are budgeting the same roof PLUS 8–14 sheets of plywood at $85 each.' },
-  { year: 'YEAR 3+ OF WAITING', b: 'Mold inside walls, insulation, rafter repair, often an insurance non-renewal letter. Average total: 2–3× the cost of doing it today.' },
-]
+const TIER_ORDER = ['good', 'better', 'best']
 
 export default function Present() {
   const router = useRouter()
   const { id } = router.query
   const [p, setP]   = useState(null)
+  const [changeOrders, setChangeOrders] = useState([])
   const [err, setErr] = useState('')
   const [i, setI]   = useState(0)
   const touch = useRef(null)
@@ -86,26 +46,38 @@ export default function Present() {
         setP(await r.json())
       })
       .catch(e => setErr(e.message))
+    fetch('/api/change-orders').then(r => r.json()).then(d => setChangeOrders(d.changeOrders || [])).catch(() => {})
   }, [id])
 
-  // Build the slide list once the proposal loads — follows the proposal framework.
+  // Build the slide list once the proposal loads — mirrors the proposal order.
   const tiers = p?.tiers || {}
   const visibleTiers = Array.isArray(tiers._visible) && tiers._visible.length
-    ? TIERS.filter(k => tiers._visible.includes(k))
-    : TIERS
+    ? TIER_ORDER.filter(k => tiers._visible.includes(k))
+    : TIER_ORDER
+  const photos = Array.isArray(p?.photo_urls) ? p.photo_urls : []
   const slides = []
   if (p) {
     slides.push({ type: 'cover' })
+    if (p.cover_letter) slides.push({ type: 'coverletter' })
     slides.push({ type: 'about' })
     slides.push({ type: 'families' })
     slides.push({ type: 'materials' })
     slides.push({ type: 'understand' })
+    if (photos.length) slides.push({ type: 'photos' })
     slides.push({ type: 'quality' })
     for (const k of visibleTiers) if (tiers[k]) slides.push({ type: 'tier', k })
+    if (changeOrders.length) slides.push({ type: 'upgrades' })
     slides.push({ type: 'benefits' })
     slides.push({ type: 'cost' })
     slides.push({ type: 'nextsteps' })
     slides.push({ type: 'experience' })
+    slides.push({ type: 'guarantee' })
+    slides.push({ type: 'license' })
+    slides.push({ type: 'notincluded' })
+    slides.push({ type: 'payment' })
+    if (p.rep_name) slides.push({ type: 'rep' })
+    slides.push({ type: 'faq' })
+    slides.push({ type: 'terms' })
     slides.push({ type: 'close' })
   }
 
@@ -120,16 +92,23 @@ export default function Present() {
     return () => window.removeEventListener('keydown', onKey)
   }, [slides.length])
 
+  // A new slide should always start scrolled to the top, not wherever the
+  // previous (possibly tall) slide left the stage.
+  const stageRef = useRef(null)
+  useEffect(() => { if (stageRef.current) stageRef.current.scrollTop = 0 }, [i])
+
   if (err)  return <Center>{err}</Center>
   if (!p)   return <Center>Loading presentation…</Center>
 
   const slide = slides[i] || slides[0]
+  const manyDots = slides.length > 12
 
   return (
     <>
       <Head><title>Presentation — {p.customer_name}</title></Head>
       <div
         className="pr-stage"
+        ref={stageRef}
         onTouchStart={e => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY } }}
         onTouchEnd={e => {
           if (touch.current == null) return
@@ -141,16 +120,22 @@ export default function Present() {
           touch.current = null
         }}
       >
-        <div className="pr-slide">{renderSlide(slide, p, tiers)}</div>
+        <div className="pr-slide">{renderSlide(slide, p, tiers, changeOrders, photos)}</div>
 
         {/* nav */}
         {i > 0 && <button className="pr-nav pr-prev" onClick={() => go(-1)}>‹</button>}
         {i < slides.length - 1 && <button className="pr-nav pr-next" onClick={() => go(1)}>›</button>}
-        <div className="pr-dots">
-          {slides.map((_, idx) => (
-            <button key={idx} className={`pr-dot ${idx === i ? 'on' : ''}`} onClick={() => setI(idx)} />
-          ))}
-        </div>
+
+        {/* progress — dots for short decks, a counter pill once there are many */}
+        {manyDots ? (
+          <div className="pr-counter">{i + 1} / {slides.length}</div>
+        ) : (
+          <div className="pr-dots">
+            {slides.map((_, idx) => (
+              <button key={idx} className={`pr-dot ${idx === i ? 'on' : ''}`} onClick={() => setI(idx)} />
+            ))}
+          </div>
+        )}
       </div>
 
       <style jsx global>{`
@@ -181,6 +166,7 @@ export default function Present() {
         .pr-card-ic{font-size:26px;margin-bottom:7px}
         .pr-card-t{font-size:14.5px;font-weight:900;color:#fff;margin-bottom:4px}
         .pr-card-b{font-size:12.5px;color:rgba(255,255,255,.7);line-height:1.5}
+        .pr-card-warr{font-size:11px;font-weight:800;color:#D4960E;margin-top:8px;letter-spacing:.4px}
         /* stats */
         .pr-stat{background:rgba(255,255,255,.06);border-radius:12px;padding:16px;text-align:center}
         .pr-stat-n{font-size:26px;font-weight:900;color:#D4960E}
@@ -195,6 +181,11 @@ export default function Present() {
         .pr-scope-grid div{background:rgba(255,255,255,.06);border-radius:12px;padding:16px 10px}
         .pr-scope-grid span{display:block;font-size:10px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:1px;margin-bottom:5px}
         .pr-scope-grid strong{font-size:17px;font-weight:900;color:#fff}
+        .pr-addons{margin-top:14px;font-size:13px;color:rgba(255,255,255,.7)}
+        .pr-addons strong{color:#fff}
+        /* photos */
+        .pr-photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+        .pr-photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:11px;display:block}
         /* numbered process steps */
         .pr-steps{display:flex;flex-direction:column;gap:9px;margin-top:6px}
         .pr-step{display:flex;align-items:center;gap:13px;background:rgba(255,255,255,.06);border-radius:11px;padding:12px 15px;text-align:left}
@@ -206,11 +197,22 @@ export default function Present() {
         .pr-tier-name{font-size:42px;font-weight:900}
         .pr-tier-tag{font-size:15px;color:rgba(255,255,255,.6);font-style:italic;margin-bottom:14px}
         .pr-tier-price{font-size:58px;font-weight:900;line-height:1}
-        .pr-tier-warr{font-size:15px;font-weight:800;margin-top:8px}
+        .pr-tier-psf{font-size:13px;color:rgba(255,255,255,.5);margin-top:6px}
+        .pr-tier-fin{font-size:13px;color:rgba(255,255,255,.75);margin-top:8px}
+        .pr-tier-fin strong{color:#D4960E;font-weight:900}
+        .pr-tier-warr{font-size:15px;font-weight:800;margin-top:12px}
         .pr-tier-mat{font-size:13px;color:rgba(255,255,255,.6);margin-top:5px}
-        .pr-feats{list-style:none;margin-top:20px;display:inline-block;text-align:left}
+        .pr-tier-narr{font-size:13px;color:rgba(255,255,255,.6);line-height:1.55;max-width:560px;margin:14px auto 0}
+        .pr-feats{list-style:none;margin-top:18px;display:inline-block;text-align:left}
         .pr-feats li{font-size:14px;color:rgba(255,255,255,.85);line-height:1.5;margin-bottom:8px}
         .pr-feats li span{font-weight:900;margin-right:8px}
+        /* optional upgrades */
+        .pr-up-list{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+        .pr-up{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:13px 16px;text-align:left}
+        .pr-up-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+        .pr-up-label{font-size:14px;font-weight:800;color:#fff}
+        .pr-up-desc{font-size:12px;color:rgba(255,255,255,.6);line-height:1.45}
+        .pr-up-price{font-size:15px;font-weight:900;color:#D4960E;flex-shrink:0;white-space:nowrap}
         /* cost of doing nothing */
         .pr-cost-card{background:rgba(176,30,23,.16);border:1px solid rgba(176,30,23,.5);border-radius:12px;padding:15px 16px;text-align:left}
         .pr-cost-year{font-size:11px;font-weight:900;color:#FCA5A5;letter-spacing:1px;margin-bottom:6px}
@@ -220,6 +222,25 @@ export default function Present() {
         /* experience */
         .pr-exp-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
         .pr-exp-promise{margin-top:18px;font-size:15px;font-style:italic;font-weight:800;color:#D4960E}
+        /* guarantee seal */
+        .pr-seal{width:96px;height:96px;border-radius:50%;background:radial-gradient(circle,#D4960E,#A8730B);color:#fff;font-size:24px;font-weight:900;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 0 0 4px #D4960E;margin:0 auto 22px}
+        /* not-included */
+        .pr-not{display:flex;gap:10px;align-items:flex-start;background:rgba(255,255,255,.06);border-radius:11px;padding:13px 15px;text-align:left;font-size:12.5px;color:rgba(255,255,255,.82);line-height:1.5}
+        .pr-not span{color:#FCA5A5;font-weight:900;font-size:15px;flex-shrink:0;line-height:1.2}
+        /* payment */
+        .pr-pay-amt{font-size:24px;font-weight:900;color:#fff;margin:4px 0 6px}
+        /* rep */
+        .pr-rep-avatar{width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,#B01E17,#7c1410);color:#fff;font-size:34px;font-weight:900;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+        .pr-rep-cta{display:flex;gap:10px;justify-content:center;margin-top:18px}
+        .pr-rep-btn{background:#D4960E;color:#0C1C38;font-weight:900;font-size:15px;padding:13px 24px;border-radius:11px;text-decoration:none}
+        .pr-rep-btn.outline{background:transparent;color:#D4960E;border:2px solid #D4960E}
+        /* faq */
+        .pr-faq-list{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+        .pr-faq{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:13px 16px;text-align:left}
+        .pr-faq-q{font-size:14px;font-weight:900;color:#fff;margin-bottom:5px}
+        .pr-faq-a{font-size:12.5px;color:rgba(255,255,255,.7);line-height:1.55}
+        /* terms */
+        .pr-terms{font-size:13px;color:rgba(255,255,255,.6);line-height:1.7;max-width:660px;margin:0 auto}
         /* close */
         .pr-close-mark{width:88px;height:88px;border-radius:50%;background:#10B981;color:#fff;font-size:48px;font-weight:900;display:flex;align-items:center;justify-content:center;margin:0 auto 22px}
         .pr-close-cta{display:inline-block;background:#D4960E;color:#0C1C38;font-weight:900;font-size:16px;padding:15px 28px;border-radius:11px;text-decoration:none;margin-top:8px}
@@ -232,26 +253,30 @@ export default function Present() {
         .pr-dots{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:5px;flex-wrap:nowrap;justify-content:center;background:rgba(12,28,56,.92);padding:9px 13px;border-radius:22px;border:1px solid rgba(255,255,255,.12);z-index:6}
         .pr-dot{width:6px;height:6px;border-radius:50%;border:none;background:rgba(255,255,255,.3);cursor:pointer;padding:0}
         .pr-dot.on{background:#D4960E}
+        /* Counter pill for long decks — scales to any slide count. */
+        .pr-counter{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(12,28,56,.92);color:rgba(255,255,255,.85);font-size:13px;font-weight:800;letter-spacing:.5px;padding:9px 18px;border-radius:22px;border:1px solid rgba(255,255,255,.12);z-index:6}
         @media(max-width:680px){
           .pr-slide{padding:34px 18px 96px}
           .pr-title{font-size:25px}
           .pr-cover-name{font-size:32px}
           .pr-tier-name{font-size:31px}
           .pr-tier-price{font-size:44px}
-          .pr-g3,.pr-g4,.pr-scope-grid,.pr-exp-grid{grid-template-columns:1fr 1fr}
+          .pr-g3,.pr-g4,.pr-scope-grid,.pr-exp-grid,.pr-photo-grid{grid-template-columns:1fr 1fr}
           /* On a phone the side arrows would cover content — move them into the
-             bottom control bar, flanking the dots pill. */
+             bottom control bar, flanking the dots/counter. */
           .pr-nav{width:42px;height:42px;font-size:23px;top:auto;bottom:13px;transform:none}
           .pr-prev{left:14px}
           .pr-next{right:14px}
           .pr-dots{bottom:18px;max-width:48vw}
+          .pr-counter{bottom:20px}
         }
       `}</style>
     </>
   )
 }
 
-function renderSlide(slide, p, tiers) {
+function renderSlide(slide, p, tiers, changeOrders, photos) {
+  const financingOn = p.financing_enabled !== false
   switch (slide.type) {
     case 'cover':
       return (
@@ -264,15 +289,24 @@ function renderSlide(slide, p, tiers) {
         </>
       )
 
+    case 'coverletter':
+      return (
+        <>
+          <div className="pr-eyebrow">A NOTE FROM YOUR REP</div>
+          <p className="pr-lede" style={{ fontStyle: 'italic', fontSize: 18, color: 'rgba(255,255,255,.9)', maxWidth: 680 }}>{p.cover_letter}</p>
+          {p.rep_name && <div className="pr-cover-meta">— {p.rep_name}, {COMPANY.name}</div>}
+        </>
+      )
+
     case 'about':
       return (
         <>
-          <div className="pr-eyebrow">STEP 1 · WHO WE ARE</div>
-          <h1 className="pr-title">A family-built SoCal roofing company</h1>
-          <p className="pr-lede">Fully licensed (CA Lic. C39 #1126880) and insured, with one promise: we treat your home the way we'd treat our own mother's. No high-pressure sales, no surprise charges — every job runs by a project lead who is on-site daily.</p>
+          <div className="pr-eyebrow">{ABOUT.eyebrow}</div>
+          <h1 className="pr-title">{ABOUT.title}</h1>
+          <p className="pr-lede">{ABOUT.body}</p>
           <div className="pr-grid pr-g4">
-            {ABOUT_STATS.map((st, i) => (
-              <div key={i} className="pr-stat"><div className="pr-stat-n">{st.n}</div><div className="pr-stat-l">{st.l}</div></div>
+            {ABOUT.stats.map((st, idx) => (
+              <div key={idx} className="pr-stat"><div className="pr-stat-n">{st.n}</div><div className="pr-stat-l">{st.l}</div></div>
             ))}
           </div>
         </>
@@ -281,12 +315,12 @@ function renderSlide(slide, p, tiers) {
     case 'families':
       return (
         <>
-          <div className="pr-eyebrow">STEP 2 · FAMILIES WE'VE HELPED</div>
-          <h1 className="pr-title">1,200+ neighbors have trusted us with their roof</h1>
+          <div className="pr-eyebrow">{FAMILIES.eyebrow}</div>
+          <h1 className="pr-title">{FAMILIES.title}</h1>
           <div className="pr-grid pr-g3" style={{ marginTop: 18 }}>
-            {TESTIMONIALS.map((t, i) => (
-              <div key={i} className="pr-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="pr-testi-stars">★★★★★</div>
+            {TESTIMONIALS.map((t, idx) => (
+              <div key={idx} className="pr-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="pr-testi-stars">{'★'.repeat(t.stars)}</div>
                 <div className="pr-testi-text">“{t.text}”</div>
                 <div className="pr-testi-name"><strong>{t.name}</strong> · {t.city}</div>
               </div>
@@ -298,33 +332,55 @@ function renderSlide(slide, p, tiers) {
     case 'materials':
       return (
         <>
-          <div className="pr-eyebrow">STEP 3 · MATERIALS & PARTNERSHIPS</div>
-          <h1 className="pr-title">We only install materials we've personally vetted</h1>
+          <div className="pr-eyebrow">{MATERIALS_SECTION.eyebrow}</div>
+          <h1 className="pr-title">{MATERIALS_SECTION.title}</h1>
           <div className="pr-grid pr-g3" style={{ marginTop: 14 }}>
-            {MATERIALS.map((m, i) => (
-              <div key={i} className="pr-card"><div className="pr-card-t">{m.name}</div><div className="pr-card-b">{m.tag}</div></div>
+            {MATERIALS.map((m, idx) => (
+              <div key={idx} className="pr-card">
+                <div className="pr-card-t">{m.name}</div>
+                <div className="pr-card-b">{m.tag}</div>
+                <div className="pr-card-warr">🛡 {m.warr}</div>
+              </div>
             ))}
           </div>
           <div className="pr-eyebrow" style={{ marginTop: 22 }}>DISTRIBUTOR PARTNERSHIPS</div>
           <div className="pr-grid pr-g2" style={{ marginTop: 8 }}>
-            {PARTNERS.map((m, i) => (
-              <div key={i} className="pr-card"><div className="pr-card-t">{m.name}</div><div className="pr-card-b">{m.tag}</div></div>
+            {PARTNERS.map((pt, idx) => (
+              <div key={idx} className="pr-card"><div className="pr-card-t">{pt.name}</div><div className="pr-card-b">{pt.tag}</div></div>
             ))}
           </div>
         </>
       )
 
-    case 'understand':
+    case 'understand': {
+      const steep = p.pitch >= 7 ? ' (steep)' : ''
       return (
         <>
-          <div className="pr-eyebrow">STEP 4 · UNDERSTANDING YOUR ROOF</div>
-          <h1 className="pr-title">Here's what we captured during your inspection</h1>
-          <p className="pr-lede">These measurements drive every part of this proposal — from how many bundles arrive on the truck to the warranty class we can offer.</p>
+          <div className="pr-eyebrow">{SCOPE.eyebrow}</div>
+          <h1 className="pr-title">{SCOPE.title}</h1>
+          <p className="pr-lede">{SCOPE.sub}</p>
           <div className="pr-scope-grid">
             <div><span>ROOF TYPE</span><strong>{p.roof_type === 'tile' ? `Tile${p.tile_subtype ? ' · ' + p.tile_subtype : ''}` : 'Shingle'}</strong></div>
-            <div><span>SQUARES</span><strong>{p.squares} sq</strong></div>
-            <div><span>PITCH</span><strong>{p.pitch}/12</strong></div>
+            <div><span>SQUARES</span><strong>{p.squares} sq (~{(p.squares * 100).toLocaleString()} sqft)</strong></div>
+            <div><span>PITCH</span><strong>{p.pitch}/12{steep}</strong></div>
             <div><span>STORIES</span><strong>{p.stories}</strong></div>
+          </div>
+          {Array.isArray(p.addons) && p.addons.length > 0 && (
+            <div className="pr-addons">Add-ons: <strong>{p.addons.join(' · ')}</strong></div>
+          )}
+        </>
+      )
+    }
+
+    case 'photos':
+      return (
+        <>
+          <div className="pr-eyebrow">PHOTOS FROM YOUR INSPECTION</div>
+          <h1 className="pr-title">A look at your roof today</h1>
+          <div className="pr-photo-grid">
+            {photos.map((ph, idx) => (
+              <img key={idx} src={ph.url} alt={ph.name || `Photo ${idx + 1}`} loading="lazy" />
+            ))}
           </div>
         </>
       )
@@ -332,12 +388,12 @@ function renderSlide(slide, p, tiers) {
     case 'quality':
       return (
         <>
-          <div className="pr-eyebrow">STEP 5 · SAME WORKMANSHIP — 3 QUALITY LEVELS</div>
-          <h1 className="pr-title">Every homeowner has a different budget and need</h1>
-          <p className="pr-lede">So we offer the same workmanship at all three levels — same crew, same standards, same senior inspector signing off. The only difference between the three tiers is the materials. There is no wrong answer.</p>
+          <div className="pr-eyebrow">{QUALITY.eyebrow}</div>
+          <h1 className="pr-title">{QUALITY.title}</h1>
+          <p className="pr-lede">{QUALITY.body}</p>
           <div className="pr-grid pr-g3">
-            {QUALITY_PILLARS.map((q, i) => (
-              <div key={i} className="pr-card"><div className="pr-card-t">{q.t}</div><div className="pr-card-b">{q.b}</div></div>
+            {QUALITY.pillars.map((q, idx) => (
+              <div key={idx} className="pr-card"><div className="pr-card-t">{q.t}</div><div className="pr-card-b">{q.b}</div></div>
             ))}
           </div>
         </>
@@ -345,15 +401,18 @@ function renderSlide(slide, p, tiers) {
 
     case 'tier': {
       const t = tiers[slide.k] || {}
-      const c = TIER_COLOR[slide.k]
+      const c = TIER_COLORS[slide.k]
       return (
         <>
-          <div className="pr-tier-badge" style={{ background: c }}>{TIER_LABEL[slide.k]}</div>
+          <div className="pr-tier-badge" style={{ background: c }}>{TIER_LABELS[slide.k]}</div>
           <h1 className="pr-tier-name">{t.name}</h1>
           <div className="pr-tier-tag">{t.tagline}</div>
           <div className="pr-tier-price" style={{ color: c }}>${(t.price || 0).toLocaleString()}</div>
+          {t.psf != null && <div className="pr-tier-psf">${t.psf}/sq · {p.squares} squares</div>}
+          {financingOn && <div className="pr-tier-fin">or about <strong>${monthly(t.price || 0).toLocaleString()}/mo</strong> with financing</div>}
           {t.warranty && <div className="pr-tier-warr" style={{ color: c }}>🛡 {t.warranty}</div>}
           {t.material && <div className="pr-tier-mat">{t.material}{t.brand ? ` · ${t.brand}` : ''}</div>}
+          {t.narrative && <p className="pr-tier-narr">{t.narrative}</p>}
           <ul className="pr-feats">
             {(t.features || []).slice(0, 8).map((f, idx) => (
               <li key={idx}><span style={{ color: c }}>✓</span>{f}</li>
@@ -363,14 +422,34 @@ function renderSlide(slide, p, tiers) {
       )
     }
 
+    case 'upgrades':
+      return (
+        <>
+          <div className="pr-eyebrow">OPTIONAL UPGRADES</div>
+          <h1 className="pr-title">Ways to get even more from your roof</h1>
+          <p className="pr-lede">Add any of these when you sign — no pressure, pick only what you want.</p>
+          <div className="pr-up-list">
+            {changeOrders.map((co, idx) => (
+              <div key={idx} className="pr-up">
+                <span className="pr-up-body">
+                  <span className="pr-up-label">{co.label}</span>
+                  {co.description && <span className="pr-up-desc">{co.description}</span>}
+                </span>
+                <span className="pr-up-price">+${(Number(co.price) || 0).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )
+
     case 'benefits':
       return (
         <>
-          <div className="pr-eyebrow">STEP 6 · TOP BENEFITS OF A NEW ROOF</div>
-          <h1 className="pr-title">What a new roof actually does for you</h1>
+          <div className="pr-eyebrow">{BENEFITS_SECTION.eyebrow}</div>
+          <h1 className="pr-title">{BENEFITS_SECTION.title}</h1>
           <div className="pr-grid pr-g3" style={{ marginTop: 14 }}>
-            {BENEFITS.map((b, i) => (
-              <div key={i} className="pr-card">
+            {BENEFITS.map((b, idx) => (
+              <div key={idx} className="pr-card">
                 <div className="pr-card-ic">{b.icon}</div>
                 <div className="pr-card-t">{b.t}</div>
                 <div className="pr-card-b">{b.b}</div>
@@ -383,28 +462,28 @@ function renderSlide(slide, p, tiers) {
     case 'cost':
       return (
         <>
-          <div className="pr-eyebrow" style={{ color: '#FCA5A5' }}>STEP 7 · THE COST OF DOING NOTHING</div>
-          <h1 className="pr-title">Roofs don't get cheaper to fix</h1>
-          <p className="pr-lede">Waiting another season usually means the cost stacks — and the surprise repairs start showing up inside the house.</p>
+          <div className="pr-eyebrow" style={{ color: '#FCA5A5' }}>{COST.eyebrow}</div>
+          <h1 className="pr-title">{COST.title}</h1>
+          <p className="pr-lede">{COST.subShort}</p>
           <div className="pr-grid pr-g3">
-            {COST_STEPS.map((cst, i) => (
-              <div key={i} className="pr-cost-card"><div className="pr-cost-year">{cst.year}</div><div className="pr-cost-b">{cst.b}</div></div>
+            {COST.steps.map((cst, idx) => (
+              <div key={idx} className="pr-cost-card"><div className="pr-cost-year">{cst.year}</div><div className="pr-cost-b">{cst.b}</div></div>
             ))}
           </div>
-          <div className="pr-cost-cta">The single biggest predictor of roof cost is <strong>how long you wait to start</strong>.</div>
+          <div className="pr-cost-cta">{COST.cta}</div>
         </>
       )
 
     case 'nextsteps':
       return (
         <>
-          <div className="pr-eyebrow">STEP 8 · WHAT HAPPENS AFTER YOU SIGN</div>
-          <h1 className="pr-title">Your install in 5 simple steps</h1>
+          <div className="pr-eyebrow">{PROCESS_SECTION.eyebrow}</div>
+          <h1 className="pr-title">{PROCESS_SECTION.title}</h1>
           <div className="pr-steps">
-            {PROCESS_STEPS.map((st, i) => (
-              <div key={i} className="pr-step">
-                <div className="pr-step-n">{i + 1}</div>
-                <div><div className="pr-step-t">{st.icon} {st.t}</div><div className="pr-step-b">{st.b}</div></div>
+            {PROCESS_STEPS.map((st, idx) => (
+              <div key={idx} className="pr-step">
+                <div className="pr-step-n">{idx + 1}</div>
+                <div><div className="pr-step-t">{st.icon} {st.title}</div><div className="pr-step-b">{st.body}</div></div>
               </div>
             ))}
           </div>
@@ -414,22 +493,113 @@ function renderSlide(slide, p, tiers) {
     case 'experience':
       return (
         <>
-          <div className="pr-eyebrow">THE GOOD PEOPLE DIFFERENCE</div>
-          <h1 className="pr-title">It's not just a roof. It's an entire experience.</h1>
-          <p className="pr-lede">Most contractors stop calling you back the moment the deposit clears. We do the opposite — every project gets its own live communication channel, your choice:</p>
+          <div className="pr-eyebrow">{EXPERIENCE.eyebrow}</div>
+          <h1 className="pr-title">{EXPERIENCE.title}</h1>
+          <p className="pr-lede">{EXPERIENCE.intro}</p>
           <div className="pr-exp-grid">
-            <div className="pr-card">
-              <div className="pr-card-ic">💬</div>
-              <div className="pr-card-t">Group text thread</div>
-              <div className="pr-card-b">You, your spouse, the project manager, the crew lead — one group, live photos all day, ask anything anytime.</div>
-            </div>
-            <div className="pr-card">
-              <div className="pr-card-ic">🔗</div>
-              <div className="pr-card-t">Shared progress link</div>
-              <div className="pr-card-b">A private project page anyone you trust can open — photo progress, delivery times, weather pauses, schedule.</div>
-            </div>
+            {EXPERIENCE.options.map((o, idx) => (
+              <div key={idx} className="pr-card">
+                <div className="pr-card-ic">{o.icon}</div>
+                <div className="pr-card-t">{o.t}</div>
+                <div className="pr-card-b">{o.b}</div>
+              </div>
+            ))}
           </div>
-          <div className="pr-exp-promise">You will never wonder what's happening with your roof. Ever.</div>
+          <div className="pr-exp-promise">{EXPERIENCE.promise}</div>
+        </>
+      )
+
+    case 'guarantee':
+      return (
+        <>
+          <div className="pr-seal">{GUARANTEE.seal}</div>
+          <div className="pr-eyebrow">{GUARANTEE.eyebrow}</div>
+          <h1 className="pr-title">{GUARANTEE.title}</h1>
+          <p className="pr-lede">{GUARANTEE.body}</p>
+        </>
+      )
+
+    case 'license':
+      return (
+        <>
+          <div className="pr-eyebrow">{LICENSE_SECTION.eyebrow}</div>
+          <h1 className="pr-title">Protected from the first nail to the last sweep</h1>
+          <div className="pr-grid pr-g2">
+            {LICENSE_BADGES.map((b, idx) => (
+              <div key={idx} className="pr-card"><div className="pr-card-t">{b.title}</div><div className="pr-card-b">{b.sub}</div></div>
+            ))}
+          </div>
+        </>
+      )
+
+    case 'notincluded':
+      return (
+        <>
+          <div className="pr-eyebrow">{NOT_INCLUDED_SECTION.eyebrow}</div>
+          <h1 className="pr-title">What this proposal does not cover</h1>
+          <p className="pr-lede">{NOT_INCLUDED_SECTION.sub}</p>
+          <div className="pr-grid pr-g2">
+            {NOT_INCLUDED.map((line, idx) => (
+              <div key={idx} className="pr-not"><span>×</span>{line}</div>
+            ))}
+          </div>
+        </>
+      )
+
+    case 'payment':
+      return (
+        <>
+          <div className="pr-eyebrow">{PAYMENT.eyebrow}</div>
+          <h1 className="pr-title">Three simple milestones</h1>
+          <p className="pr-lede">{PAYMENT.sub} Numbers scale to whichever package you select.</p>
+          <div className="pr-grid pr-g3">
+            {PAYMENT.milestones.map((m, idx) => (
+              <div key={idx} className="pr-card" style={{ textAlign: 'center' }}>
+                <div className="pr-card-t" style={{ color: '#D4960E', fontSize: 11, letterSpacing: 1 }}>{m.step}</div>
+                <div className="pr-pay-amt">{m.fallback}</div>
+                <div className="pr-card-b" style={{ textAlign: 'center' }}>{m.when}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )
+
+    case 'rep':
+      return (
+        <>
+          <div className="pr-eyebrow">{REP.eyebrow}</div>
+          <div className="pr-rep-avatar">{(p.rep_name || 'G').trim().charAt(0).toUpperCase()}</div>
+          <h1 className="pr-tier-name" style={{ fontSize: 34 }}>{p.rep_name}</h1>
+          <div className="pr-tier-tag">{COMPANY.name}</div>
+          <div className="pr-rep-cta">
+            <a className="pr-rep-btn" href={`tel:${COMPANY.phoneTel}`}>📞 Call</a>
+            <a className="pr-rep-btn outline" href={`sms:${COMPANY.phoneTel}`}>💬 Text</a>
+          </div>
+        </>
+      )
+
+    case 'faq':
+      return (
+        <>
+          <div className="pr-eyebrow">{FAQ_SECTION.eyebrow}</div>
+          <h1 className="pr-title">Frequently asked questions</h1>
+          <div className="pr-faq-list">
+            {FAQS.map((f, idx) => (
+              <div key={idx} className="pr-faq">
+                <div className="pr-faq-q">{f.q}</div>
+                <div className="pr-faq-a">{f.a}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )
+
+    case 'terms':
+      return (
+        <>
+          <div className="pr-eyebrow">THE FINE PRINT</div>
+          <h1 className="pr-title">{TERMS.title}</h1>
+          <p className="pr-terms">{TERMS.body}</p>
         </>
       )
 
@@ -438,7 +608,7 @@ function renderSlide(slide, p, tiers) {
         <>
           <div className="pr-close-mark">✓</div>
           <h1 className="pr-title">Ready to protect your home?</h1>
-          <p className="pr-lede">Pick the package that fits — we'll handle the rest. Licensed, insured, and local. CA Lic. C39 #1126880.</p>
+          <p className="pr-lede">Pick the package that fits — we'll handle the rest. Licensed, insured, and local. {COMPANY.license}.</p>
           <a className="pr-close-cta" href={`/p/${p.id}`} target="_blank" rel="noreferrer">Open the signable proposal →</a>
         </>
       )

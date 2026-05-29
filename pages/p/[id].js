@@ -1,54 +1,13 @@
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useEffect, useRef, useState } from 'react'
-
-const FALLBACK_APR = 7.99
-const FALLBACK_TERM = 120
-
-function monthly(principal, aprPct = FALLBACK_APR, term = FALLBACK_TERM) {
-  const r = (aprPct / 100) / 12
-  if (!r) return Math.round(principal / term)
-  return Math.round((principal * r) / (1 - Math.pow(1 + r, -term)))
-}
-
-// Fallback testimonials — admin can later move these to settings.
-const TESTIMONIALS = [
-  { name: 'Maria S.', city: 'Yucaipa, CA',     stars: 5, text: 'Crew showed up on time, treated my home like their own, and finished a full tear-off in two days. Roof looks incredible.' },
-  { name: 'Daniel R.', city: 'Redlands, CA',    stars: 5, text: 'Honest pricing, no surprises, and they walked me through every option. Easiest contractor experience I have ever had.' },
-  { name: 'Carolyn P.', city: 'San Bernardino', stars: 5, text: 'Wind storm took out half my ridge. They had a crew here within a week and the workmanship was flawless.' },
-]
-
-const PROCESS_STEPS = [
-  { icon: '✍️', title: 'Sign your proposal',         body: 'Pick a tier, sign on this page, and your project is officially scheduled.' },
-  { icon: '📅', title: 'Pre-install walkthrough',    body: 'Your rep visits to confirm color choices, pull permits if needed, and lock the install date.' },
-  { icon: '🚚', title: 'Materials delivered',         body: 'Manufacturer-fresh shingles or tile delivered to your driveway 1–2 days before install.' },
-  { icon: '🔨', title: 'Tear-off & install',          body: 'Crew tears off old layers, inspects decking, and installs your new system. Most homes finish in 1–2 days.' },
-  { icon: '✅', title: 'Final inspection & cleanup',  body: 'Magnetic sweep, daily site cleanup, and a final walkthrough so you sign off happy.' },
-]
-
-const FAQS = [
-  { q: 'How long does the install take?',                 a: 'Most single-family homes finish in 1–2 working days. Larger or steeper roofs may run 3 days. We will give you a firm window during the pre-install walkthrough.' },
-  { q: 'Do I need to be home during the install?',         a: 'You do not. Most of our customers go to work as usual. Our crew leads will text you progress photos throughout the day.' },
-  { q: 'What happens if it rains?',                        a: 'We monitor weather hourly. If rain is forecast, we reschedule before tear-off begins. Your home is never left exposed overnight — we tarp and seal at the end of every day.' },
-  { q: 'How is my landscaping protected?',                 a: 'We tarp around the perimeter, move patio furniture, and run a magnetic sweep at the end of each day for stray nails. Damage caused by our crew is fully covered by our liability insurance.' },
-  { q: 'When do I pay?',                                   a: 'A small deposit ($1,000 or 10%, whichever is less) holds your install slot. 50% is due the day work starts. The balance is due upon completion and your final walkthrough.' },
-  { q: 'What if my decking is rotten underneath?',         a: 'We do not know until we tear off. Standard pricing includes ~1 sheet per 3 squares. Anything beyond that is a transparent $85/sheet Change Order you sign before we proceed.' },
-  { q: 'Are you licensed and insured?',                    a: 'Yes. CA Lic. C39 #1126880, fully bonded, $2M general liability + workers comp. Verification documents are available on request.' },
-  { q: 'What does the warranty actually cover?',           a: 'Workmanship warranty covers any leak or installation defect for the period stated in your tier. Manufacturer warranty covers material defects per the brand’s terms — we register every roof on your behalf the day after install.' },
-  { q: 'Do you handle insurance claims?',                  a: 'Yes. If your roof was damaged by storm or hail, we coordinate directly with your insurance adjuster, document the damage, and submit supplements when needed.' },
-  { q: 'Can I see past projects in my neighborhood?',      a: 'Absolutely. Ask your rep — we will share before/after photos and addresses of nearby installs you can drive by.' },
-]
-
-const TIER_LABELS = { good: 'ESSENTIAL', better: 'PERFORMANCE', best: 'SIGNATURE' }
-
-const NOT_INCLUDED = [
-  'Interior repairs (drywall, paint, ceiling damage from prior leaks)',
-  'Solar panel removal and reset (priced separately as add-on)',
-  'Skylight replacement (we re-flash existing skylights — replacement is a separate quote)',
-  'Gutter replacement (priced separately as add-on)',
-  'HVAC unit relocation if mounted on the roof',
-  'Permit fees that exceed the listed amount (rare; covered transparently)',
-]
+import {
+  COMPANY, TIER_LABELS, monthly, FINANCING_NOTE, paymentSplit, PAYMENT,
+  ABOUT, FAMILIES, TESTIMONIALS, MATERIALS_SECTION, MATERIALS, PARTNERS, SCOPE,
+  QUALITY, TIERS_INTRO, BENEFITS_SECTION, BENEFITS, COST, PROCESS_SECTION, PROCESS_STEPS,
+  EXPERIENCE, GUARANTEE, LICENSE_SECTION, LICENSE_BADGES, NOT_INCLUDED_SECTION, NOT_INCLUDED,
+  REP, FAQ_SECTION, FAQS, TERMS,
+} from '../../lib/content'
 
 function getIdFromUrl() {
   if (typeof window === 'undefined') return null
@@ -164,9 +123,7 @@ export default function PublicProposal() {
   const acceptedAddons = Array.isArray(p.accepted_addons) ? p.accepted_addons : []
   const sel = accepted ? tiers[accepted.tier] : null
   const selPrice = (accepted && p.accepted_total) ? Number(p.accepted_total) : (sel?.price || 0)
-  const deposit = Math.min(1000, Math.round(selPrice * 0.10))
-  const startPay = Math.round(selPrice * 0.50)
-  const finalPay = selPrice - deposit - startPay
+  const { deposit, start: startPay, final: finalPay } = paymentSplit(selPrice)
 
   return (
     <>
@@ -207,24 +164,19 @@ export default function PublicProposal() {
 
           {/* 2 — About us */}
           <section className="pub-about">
-            <div className="pub-section-title">🏠 ABOUT GOOD PEOPLE ROOFING</div>
-            <p className="pub-about-body">
-              We are a family-built Southern California roofing company, fully licensed (CA Lic. C39 #1126880) and insured, with a simple promise: we treat your home the way we would treat our own mother's. No high-pressure sales. No surprise charges. Every job is run by a project lead who is on-site daily, and every roof is inspected by a senior estimator before we hand you the keys back.
-            </p>
+            <div className="pub-section-title">{ABOUT.emoji} {ABOUT.eyebrow}</div>
+            <p className="pub-about-body">{ABOUT.body}</p>
             <div className="pub-about-stats">
-              <div><strong>1,200+</strong><span>Roofs installed</span></div>
-              <div><strong>4.9★</strong><span>Average review</span></div>
-              <div><strong>10+</strong><span>Years serving SoCal</span></div>
-              <div><strong>100%</strong><span>Cleanup guarantee</span></div>
+              {ABOUT.stats.map((st, i) => (
+                <div key={i}><strong>{st.n}</strong><span>{st.l}</span></div>
+              ))}
             </div>
           </section>
 
           {/* 3 — Families we've helped */}
           <section className="pub-testimonials">
-            <div className="pub-section-title">👨‍👩‍👧 FAMILIES WE'VE HELPED</div>
-            <p className="pub-section-sub" style={{ marginBottom: 14 }}>
-              1,200+ Southern California homeowners have trusted Good People with their roof. Here is what a few of your neighbors said.
-            </p>
+            <div className="pub-section-title">{FAMILIES.emoji} {FAMILIES.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 14 }}>{FAMILIES.sub}</p>
             <div className="pub-testi-grid">
               {TESTIMONIALS.map((t, i) => (
                 <div key={i} className="pub-testi-card">
@@ -238,37 +190,30 @@ export default function PublicProposal() {
 
           {/* 4 — Materials we use / partnerships */}
           <section className="pub-materials">
-            <div className="pub-section-title">🏭 MATERIALS WE USE & PARTNERSHIPS</div>
-            <p className="pub-section-sub" style={{ marginBottom: 16 }}>We only install materials from manufacturers we have personally vetted on hundreds of installs. Every product carries its own multi-decade manufacturer warranty on top of our workmanship guarantee.</p>
+            <div className="pub-section-title">{MATERIALS_SECTION.emoji} {MATERIALS_SECTION.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 16 }}>{MATERIALS_SECTION.sub}</p>
             <div className="pub-mat-grid">
-              <MatCard logo={brandAssets.gaf}            name="GAF"             tag="Timberline HDZ / UHDZ Architectural Shingles" warr="Up to Lifetime Limited Warranty" />
-              <MatCard logo={brandAssets.owens_corning}  name="Owens Corning"   tag="Duration / Duration COOL Series"              warr="Lifetime + WindProven™ Limited" />
-              <MatCard logo={brandAssets.westlake}       name="Westlake Royal"  tag="Concrete & clay tile, premium accessory products" warr="50-year limited transferable" />
-              <MatCard logo={brandAssets.eagle}          name="Eagle Roofing"   tag="Concrete Tile (flat & S-type)"                warr="50-year limited transferable" />
-              <MatCard logo={brandAssets.titanium}       name="Titanium"        tag="High-performance synthetic underlayments"     warr="Up to lifetime limited" />
-              <MatCard logo={brandAssets.boral}          name="Boral"           tag="Specialty tile + accessory products"          warr="Limited lifetime on select lines" />
+              {MATERIALS.map((m, i) => (
+                <MatCard key={i} logo={brandAssets[m.logoKey]} name={m.name} tag={m.tag} warr={m.warr} />
+              ))}
             </div>
             <div className="pub-partners">
               <div className="pub-partners-lbl">DISTRIBUTOR PARTNERSHIPS</div>
               <div className="pub-partners-grid">
-                <div className="pub-partner-card">
-                  <strong>QXO</strong>
-                  <span>National roofing distributor — preferred pricing, faster delivery, full warranty registration support.</span>
-                </div>
-                <div className="pub-partner-card">
-                  <strong>SRS Distribution</strong>
-                  <span>Largest US roofing distributor — full inventory access, dedicated account management, certified-contractor benefits.</span>
-                </div>
+                {PARTNERS.map((pt, i) => (
+                  <div key={i} className="pub-partner-card">
+                    <strong>{pt.name}</strong>
+                    <span>{pt.tag}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </section>
 
           {/* 5 — Understanding your roof */}
           <section className="pub-scope">
-            <div className="pub-scope-title">🔍 UNDERSTANDING YOUR ROOF</div>
-            <p className="pub-section-sub" style={{ marginBottom: 14 }}>
-              These are the measurements we captured during your inspection. They drive every part of this proposal — from how many bundles arrive on the truck to the warranty class we can offer.
-            </p>
+            <div className="pub-scope-title">{SCOPE.emoji} {SCOPE.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 14 }}>{SCOPE.sub}</p>
             <div className="pub-scope-grid">
               <div><span>Roof type</span><strong>{p.roof_type === 'tile' ? `Tile${p.tile_subtype ? ' (' + p.tile_subtype + ')' : ''}` : 'Architectural Shingle'}</strong></div>
               <div><span>Squares</span><strong>{p.squares} sq (~{(p.squares * 100).toLocaleString()} sqft)</strong></div>
@@ -295,22 +240,20 @@ export default function PublicProposal() {
 
           {/* 6 — Same workmanship, 3 quality levels */}
           <section className="pub-quality">
-            <div className="pub-section-title">⚖️ SAME WORKMANSHIP — 3 QUALITY LEVELS</div>
-            <p className="pub-quality-body">
-              Every roof we install gets the same crew, the same daily cleanups, and the same senior inspector signing off at the end. The difference between our three options is <strong>only the materials</strong> — what they are made of, how long they last, and how much the manufacturer warranty covers. There is no wrong answer. Pick the level that fits your home and your budget.
-            </p>
+            <div className="pub-section-title">{QUALITY.emoji} {QUALITY.eyebrow}</div>
+            <p className="pub-quality-body">{QUALITY.body}</p>
             <div className="pub-quality-pillars">
-              <div><strong>Same crew, every tier</strong><span>Installed by our W-2 employees — never day-laborers.</span></div>
-              <div><strong>Same standards</strong><span>Same safety practices, same flashing details, same final sweep.</span></div>
-              <div><strong>Different materials</strong><span>Shingle composition, tile weight, granule mix, warranty class.</span></div>
+              {QUALITY.pillars.map((q, i) => (
+                <div key={i}><strong>{q.t}</strong><span>{q.b}</span></div>
+              ))}
             </div>
           </section>
 
           {/* 7 — Choose your tier: Essential / Performance / Signature */}
           {!accepted && (
             <section>
-              <h2 className="pub-section-title">CHOOSE YOUR PACKAGE</h2>
-              <p className="pub-section-sub">Essential, Performance, or Signature. Same workmanship across all three — different materials and warranties. Pick the one that fits your home and your budget.</p>
+              <h2 className="pub-section-title">{TIERS_INTRO.title}</h2>
+              <p className="pub-section-sub">{TIERS_INTRO.sub}</p>
               <div className="pub-tiers">
                 {visibleTierKeys.map(k => {
                   const t = tiers[k]; if (!t) return null
@@ -344,7 +287,7 @@ export default function PublicProposal() {
                 })}
               </div>
               {financingOn && (
-                <div className="pub-fin-note">💳 Financing illustration uses {FALLBACK_APR}% APR over {FALLBACK_TERM/12} years. Actual rates depend on credit; ask your rep for full terms.</div>
+                <div className="pub-fin-note">💳 {FINANCING_NOTE}</div>
               )}
             </section>
           )}
@@ -400,67 +343,36 @@ export default function PublicProposal() {
 
           {/* 8 — Top benefits of a new roof */}
           <section className="pub-benefits">
-            <div className="pub-section-title">📈 TOP BENEFITS OF A NEW ROOF</div>
+            <div className="pub-section-title">{BENEFITS_SECTION.emoji} {BENEFITS_SECTION.eyebrow}</div>
             <div className="pub-benefits-grid">
-              <div>
-                <div className="pub-benefit-icon">🛡</div>
-                <strong>Protection that lasts decades</strong>
-                <p>A new roof eliminates daily worry about leaks and ceiling stains. Modern shingles and tile carry 30-year to lifetime manufacturer warranties.</p>
-              </div>
-              <div>
-                <div className="pub-benefit-icon">💰</div>
-                <strong>Higher resale & appraisal value</strong>
-                <p>Realtors consistently rank a recent roof in the top three improvements that move appraisal numbers. Most California buyers ask for the roof receipt before they offer.</p>
-              </div>
-              <div>
-                <div className="pub-benefit-icon">⚡</div>
-                <strong>Lower energy bills</strong>
-                <p>Cool-rated shingles like Owens Corning Duration COOL reflect sunlight, drop attic temps by up to 20°F, and trim summer A/C costs.</p>
-              </div>
-              <div>
-                <div className="pub-benefit-icon">📋</div>
-                <strong>Insurance peace of mind</strong>
-                <p>Many SoCal insurers now require a roof under 20 years old to keep your homeowner's policy. A new roof keeps coverage in good standing.</p>
-              </div>
-              <div>
-                <div className="pub-benefit-icon">🏡</div>
-                <strong>Curb appeal that gets noticed</strong>
-                <p>Architectural shingles and concrete tile come in modern color palettes that update the entire look of your home from the street.</p>
-              </div>
-              <div>
-                <div className="pub-benefit-icon">🌬</div>
-                <strong>Wind & storm rating you can trust</strong>
-                <p>Our installs are rated for up to 130 mph wind. Ridge vents, drip edge upgrades, and ice-and-water shield options lock in the upper end.</p>
-              </div>
+              {BENEFITS.map((b, i) => (
+                <div key={i}>
+                  <div className="pub-benefit-icon">{b.icon}</div>
+                  <strong>{b.t}</strong>
+                  <p>{b.b}</p>
+                </div>
+              ))}
             </div>
           </section>
 
           {/* 9 — Cost of doing nothing */}
           <section className="pub-cost">
-            <div className="pub-section-title pub-cost-title">⚠️ THE COST OF DOING NOTHING</div>
-            <p className="pub-section-sub" style={{ marginBottom: 14 }}>Roofs do not get cheaper to fix. Waiting another season usually means the cost stacks — and the surprise repairs start showing up inside the house.</p>
+            <div className="pub-section-title pub-cost-title">{COST.emoji} {COST.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 14 }}>{COST.sub}</p>
             <div className="pub-cost-grid">
-              <div>
-                <div className="pub-cost-year">YEAR 1 OF WAITING</div>
-                <p>Small leaks find weak shingles after the first big storm. You replace one ceiling tile and a section of drywall — typically $400 to $900 in interior repair.</p>
-              </div>
-              <div>
-                <div className="pub-cost-year">YEAR 2 OF WAITING</div>
-                <p>Water reaches the decking. Now you are budgeting for the same roof <em>plus</em> 8 to 14 sheets of plywood at $85 each — a $700 to $1,200 line item we would have avoided.</p>
-              </div>
-              <div>
-                <div className="pub-cost-year">YEAR 3+ OF WAITING</div>
-                <p>Mold inside walls, insulation replacement, rafters needing sister-boards, often a homeowner's-insurance non-renewal letter. Average total: 2-3× the cost of doing the roof today.</p>
-              </div>
+              {COST.steps.map((cs, i) => (
+                <div key={i}>
+                  <div className="pub-cost-year">{cs.year}</div>
+                  <p>{cs.b}</p>
+                </div>
+              ))}
             </div>
-            <div className="pub-cost-cta">
-              The single biggest predictor of roof cost is <strong>how long you wait to start</strong>.
-            </div>
+            <div className="pub-cost-cta">{COST.cta}</div>
           </section>
 
           {/* 10 — Install in 5 steps */}
           <section className="pub-process">
-            <div className="pub-section-title">📅 WHAT HAPPENS AFTER YOU SIGN — YOUR INSTALL IN 5 STEPS</div>
+            <div className="pub-section-title">{PROCESS_SECTION.emoji} {PROCESS_SECTION.eyebrow} — YOUR INSTALL IN 5 STEPS</div>
             <div className="pub-process-list">
               {PROCESS_STEPS.map((s, i) => (
                 <div key={i} className="pub-process-step">
@@ -477,49 +389,45 @@ export default function PublicProposal() {
 
           {/* 11 — It's not just a roof, it's an entire experience */}
           <section className="pub-experience">
-            <div className="pub-experience-eyebrow">THE GOOD PEOPLE DIFFERENCE</div>
-            <h3>It's not just a roof. It's an entire experience.</h3>
-            <p>Most contractors stop calling you back the moment the deposit clears. We do the opposite. Every project we run gets its own live communication channel — your choice:</p>
+            <div className="pub-experience-eyebrow">{EXPERIENCE.eyebrow}</div>
+            <h3>{EXPERIENCE.title}</h3>
+            <p>{EXPERIENCE.intro}</p>
             <div className="pub-experience-options">
-              <div>
-                <div className="pub-experience-icon">💬</div>
-                <strong>Group text thread</strong>
-                <p>One group with everyone who matters: you, your spouse, the project manager, the crew lead. Live photos throughout the day. Ask anything, anytime.</p>
-              </div>
-              <div>
-                <div className="pub-experience-icon">🔗</div>
-                <strong>Shared progress link</strong>
-                <p>A private project page anyone you trust can open. Photo progress, materials delivery times, weather pauses, schedule confirmation — all on one page.</p>
-              </div>
+              {EXPERIENCE.options.map((o, i) => (
+                <div key={i}>
+                  <div className="pub-experience-icon">{o.icon}</div>
+                  <strong>{o.t}</strong>
+                  <p>{o.b}</p>
+                </div>
+              ))}
             </div>
-            <p className="pub-experience-promise">Either way: you will never wonder what is happening with your roof. Ever.</p>
+            <p className="pub-experience-promise">{EXPERIENCE.promise}</p>
           </section>
 
           {/* Trust + closing sections */}
           <section className="pub-guarantee">
             <div className="pub-guarantee-badge">
-              <div className="pub-guarantee-seal">100%</div>
+              <div className="pub-guarantee-seal">{GUARANTEE.seal}</div>
             </div>
             <div className="pub-guarantee-body">
-              <div className="pub-guarantee-eyebrow">OUR GUARANTEE</div>
-              <h3>Done right or we make it right.</h3>
-              <p>If anything about the install is not what we promised — a leak, a missed flashing, a cleanup we missed — we come back, on our dime, until it is right. That promise lasts the full term of your tier's workmanship warranty, in writing.</p>
+              <div className="pub-guarantee-eyebrow">{GUARANTEE.eyebrow}</div>
+              <h3>{GUARANTEE.title}</h3>
+              <p>{GUARANTEE.body}</p>
             </div>
           </section>
 
           <section className="pub-license">
-            <div className="pub-section-title">🛡 FULLY LICENSED & INSURED</div>
+            <div className="pub-section-title">{LICENSE_SECTION.emoji} {LICENSE_SECTION.eyebrow}</div>
             <div className="pub-license-grid">
-              <LicBadge logo={brandAssets.cslb}         title="CA Lic. C39 #1126880" sub="CSLB roofing classification" />
-              <LicBadge logo={brandAssets.liability}    title="$2M General Liability" sub="Verified annually" />
-              <LicBadge logo={brandAssets.workers_comp} title="Workers' Comp"          sub="Covers our crew on your property" />
-              <LicBadge logo={brandAssets.gaf_certified} title="Manufacturer Certified" sub="GAF, Owens Corning, Eagle" />
+              {LICENSE_BADGES.map((b, i) => (
+                <LicBadge key={i} logo={brandAssets[b.logoKey]} title={b.title} sub={b.sub} />
+              ))}
             </div>
           </section>
 
           <section className="pub-notincluded">
-            <div className="pub-section-title">📝 WHAT'S NOT INCLUDED</div>
-            <p className="pub-section-sub" style={{ marginBottom: 12 }}>Being upfront beats surprises. Anything below is either out of scope or quoted separately when needed.</p>
+            <div className="pub-section-title">{NOT_INCLUDED_SECTION.emoji} {NOT_INCLUDED_SECTION.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 12 }}>{NOT_INCLUDED_SECTION.sub}</p>
             <ul className="pub-not-list">
               {NOT_INCLUDED.map((line, i) => (
                 <li key={i}><span>×</span>{line}</li>
@@ -528,24 +436,16 @@ export default function PublicProposal() {
           </section>
 
           <section className="pub-payment">
-            <div className="pub-section-title">💵 PAYMENT SCHEDULE</div>
-            <p className="pub-section-sub" style={{ marginBottom: 14 }}>Three simple milestones. No hidden charges. {accepted ? <>Below is what your <strong>{TIER_LABELS[accepted.tier]}</strong> package looks like split out:</> : 'Numbers below scale to whichever package you select.'}</p>
+            <div className="pub-section-title">💵 {PAYMENT.eyebrow}</div>
+            <p className="pub-section-sub" style={{ marginBottom: 14 }}>{PAYMENT.sub} {accepted ? <>Below is what your <strong>{TIER_LABELS[accepted.tier]}</strong> package looks like split out:</> : 'Numbers below scale to whichever package you select.'}</p>
             <div className="pub-pay-grid">
-              <div className="pub-pay-card">
-                <div className="pub-pay-step">1 · DEPOSIT</div>
-                <div className="pub-pay-amt">{accepted ? `$${deposit.toLocaleString()}` : '$1,000 or 10%'}</div>
-                <div className="pub-pay-when">Due upon signing — locks your install slot</div>
-              </div>
-              <div className="pub-pay-card">
-                <div className="pub-pay-step">2 · START</div>
-                <div className="pub-pay-amt">{accepted ? `$${startPay.toLocaleString()}` : '50%'}</div>
-                <div className="pub-pay-when">Due the morning the crew begins tear-off</div>
-              </div>
-              <div className="pub-pay-card">
-                <div className="pub-pay-step">3 · COMPLETION</div>
-                <div className="pub-pay-amt">{accepted ? `$${finalPay.toLocaleString()}` : 'Balance'}</div>
-                <div className="pub-pay-when">Due after final walkthrough — only if you are happy</div>
-              </div>
+              {PAYMENT.milestones.map((m, i) => (
+                <div key={i} className="pub-pay-card">
+                  <div className="pub-pay-step">{m.step}</div>
+                  <div className="pub-pay-amt">{accepted ? `$${[deposit, startPay, finalPay][i].toLocaleString()}` : m.fallback}</div>
+                  <div className="pub-pay-when">{m.when}</div>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -554,20 +454,20 @@ export default function PublicProposal() {
               <div className="pub-rep-card">
                 <div className="pub-rep-avatar">{repInitial}</div>
                 <div className="pub-rep-info">
-                  <div className="pub-rep-eyebrow">YOUR DEDICATED REP</div>
+                  <div className="pub-rep-eyebrow">{REP.eyebrow}</div>
                   <div className="pub-rep-name">{p.rep_name}</div>
-                  <div className="pub-rep-title">Good People Roofing</div>
+                  <div className="pub-rep-title">{COMPANY.name}</div>
                 </div>
                 <div className="pub-rep-cta">
-                  <a className="pub-rep-btn" href="tel:+18447663709">📞 Call</a>
-                  <a className="pub-rep-btn outline" href="sms:+18447663709">💬 Text</a>
+                  <a className="pub-rep-btn" href={`tel:${COMPANY.phoneTel}`}>📞 Call</a>
+                  <a className="pub-rep-btn outline" href={`sms:${COMPANY.phoneTel}`}>💬 Text</a>
                 </div>
               </div>
             </section>
           )}
 
           <section className="pub-faq">
-            <div className="pub-section-title">❓ FREQUENTLY ASKED QUESTIONS</div>
+            <div className="pub-section-title">{FAQ_SECTION.emoji} {FAQ_SECTION.eyebrow}</div>
             <div className="pub-faq-list">
               {FAQS.map((f, i) => {
                 const open = openFaq === i
@@ -585,14 +485,14 @@ export default function PublicProposal() {
           </section>
 
           <section className="pub-terms">
-            <h3>Terms</h3>
-            <p>This proposal is valid for 14 days. Deposit: $1,000 or 10% (whichever is less) due upon signing · 50% at start · balance upon completion. Wood repairs, extra layers, and permit costs added via signed Change Order. CA Lic. C39 #1126880. Fully licensed and insured.</p>
+            <h3>{TERMS.title}</h3>
+            <p>{TERMS.body}</p>
           </section>
 
         </main>
 
         <footer className="pub-footer">
-          Good People Roofing Inc. &nbsp;·&nbsp; goodpeopleroofinginc.com &nbsp;·&nbsp; (844) ROOFS-09 &nbsp;·&nbsp; CA Lic. C39 #1126880
+          {COMPANY.footer}
         </footer>
       </div>
 

@@ -1,6 +1,12 @@
 import React from 'react'
 import { renderToStream, Document, Page, View, Text, StyleSheet, Image } from '@react-pdf/renderer'
 import { serverClient } from '../../../../lib/supabase'
+import {
+  TIER_COLORS, paymentSplit,
+  ABOUT, FAMILIES, TESTIMONIALS, MATERIALS_SECTION, MATERIALS, PARTNERS, SCOPE,
+  QUALITY, BENEFITS_SECTION, BENEFITS, COST, PROCESS_SECTION, PROCESS_STEPS,
+  EXPERIENCE, PAYMENT, TERMS,
+} from '../../../../lib/content'
 
 export const config = { maxDuration: 30 }
 
@@ -11,51 +17,11 @@ const CREAM = '#F7F6F3'
 const TEXT = '#1A1A2E'
 const MUTED = '#4A5568'
 const BORDER = '#E2E0DB'
-const TIER_COLORS = { good: '#4A5568', better: CRIMSON, best: GOLD }
-
-/* ── Framework content — mirrors the web proposal and presentation deck ── */
-const ABOUT_PARA = 'We are a family-built Southern California roofing company, fully licensed (CA Lic. C39 #1126880) and insured, with one simple promise: we treat your home the way we would treat our own mother’s. No high-pressure sales, no surprise charges. Every job is run by a project lead who is on-site daily, and every roof is inspected by a senior estimator before we hand you the keys back.'
-const ABOUT_STATS = [['1,200+', 'Roofs installed'], ['4.9 / 5', 'Average review'], ['10+ yrs', 'Serving SoCal'], ['100%', 'Cleanup guarantee']]
-const TESTIMONIALS = [
-  { name: 'Maria S.',   city: 'Yucaipa, CA',    text: 'Crew showed up on time, treated my home like their own, and finished a full tear-off in two days.' },
-  { name: 'Daniel R.',  city: 'Redlands, CA',   text: 'Honest pricing, no surprises, and they walked me through every option. Easiest contractor experience ever.' },
-  { name: 'Carolyn P.', city: 'San Bernardino', text: 'Wind storm took out half my ridge. They had a crew here within a week and the workmanship was flawless.' },
-]
-const MATERIALS = [
-  ['GAF', 'Timberline HDZ / UHDZ shingles'], ['Owens Corning', 'Duration / Duration COOL'],
-  ['Westlake Royal', 'Concrete & clay tile'], ['Eagle Roofing', 'Concrete tile, flat & S-type'],
-  ['Titanium', 'Synthetic underlayments'],   ['Boral', 'Specialty tile & accessories'],
-]
-const PARTNERS = [
-  ['QXO', 'National roofing distributor — preferred pricing and faster delivery.'],
-  ['SRS Distribution', 'Largest US roofing distributor — full inventory and warranty support.'],
-]
-const QUALITY_PARA = 'One of the biggest things that separates us: we know every homeowner has a different budget and a different need. So we offer the same workmanship at all three levels — same crew, same standards, same senior inspector signing off. The only difference between the three tiers is the materials.'
-const QUALITY_PILLARS = [
-  ['Same crew, every tier', 'Installed by our W-2 employees — never day-laborers.'],
-  ['Same standards', 'Same safety practices, same flashing details, same final sweep.'],
-  ['Different materials', 'Shingle composition, tile weight, granule mix, warranty class.'],
-]
-const BENEFITS = [
-  ['Protection for decades', 'No more daily worry about leaks or ceiling stains — 30-year to lifetime warranties.'],
-  ['Higher resale value', 'A recent roof is a top-three improvement that moves appraisal numbers.'],
-  ['Lower energy bills', 'Cool-rated shingles reflect sunlight and trim summer A/C costs.'],
-  ['Insurance peace of mind', 'Many SoCal insurers require a roof under 20 years old to keep coverage.'],
-  ['Curb appeal', 'Modern color palettes update the whole look of the home from the street.'],
-  ['Wind & storm rated', 'Installs rated up to 130 mph wind with ridge vents and drip-edge upgrades.'],
-]
-const PROCESS_STEPS = [
-  ['Sign your proposal', 'Pick a tier, sign, and your project is officially scheduled.'],
-  ['Pre-install walkthrough', 'Your rep confirms colors, pulls permits, and locks the install date.'],
-  ['Materials delivered', 'Manufacturer-fresh materials delivered 1-2 days before install.'],
-  ['Tear-off & installation', 'Old layers off, decking inspected, new system on — most homes in 1-2 days.'],
-  ['Final inspection & cleanup', 'Magnetic sweep, daily cleanup, and a final walkthrough so you sign off happy.'],
-]
-const COST_STEPS = [
-  ['YEAR 1 OF WAITING', 'Small leaks find weak shingles after the first big storm. You replace a ceiling tile and a section of drywall — typically $400 to $900 in interior repair.'],
-  ['YEAR 2 OF WAITING', 'Water reaches the decking. Now you are budgeting for the same roof PLUS 8 to 14 sheets of plywood at $85 each — a $700 to $1,200 line item we would have avoided.'],
-  ['YEAR 3+ OF WAITING', 'Mold inside walls, insulation replacement, rafters needing sister-boards, often a homeowner-insurance non-renewal letter. Average total: 2-3x the cost of doing the roof today.'],
-]
+// TIER_COLORS and all narrative content now come from lib/content.js so the
+// PDF, web proposal, and presentation deck share one source of truth.
+// react-pdf (Helvetica) cannot render the ★ glyph, so stat numbers are
+// stripped of it for the PDF only.
+const pdfStat = (n) => String(n).replace(/★/g, '')
 
 const s = StyleSheet.create({
   page:        { padding: 36, paddingBottom: 56, fontSize: 10, color: TEXT, fontFamily: 'Helvetica' },
@@ -168,9 +134,7 @@ function ProposalPDF({ p, logoUrl }) {
   const acceptedAddons = Array.isArray(p.accepted_addons) ? p.accepted_addons : []
   const basePrice = sel?.price || 0
   const total = p.accepted_total ? Number(p.accepted_total) : basePrice
-  const deposit = Math.min(1000, Math.round(total * 0.10))
-  const start = Math.round(total * 0.50)
-  const finalPay = total - deposit - start
+  const { deposit, start, final: finalPay } = paymentSplit(total)
 
   return (
     <Document>
@@ -212,19 +176,19 @@ function ProposalPDF({ p, logoUrl }) {
         {p.cover_letter && <Text style={s.cover}>{p.cover_letter}</Text>}
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>ABOUT GOOD PEOPLE ROOFING</Text>
-          <Text style={s.secTitle}>A family-built Southern California roofing company</Text>
-          <Text style={s.body}>{ABOUT_PARA}</Text>
+          <Text style={s.eyebrow}>{ABOUT.eyebrow}</Text>
+          <Text style={s.secTitle}>{ABOUT.title}</Text>
+          <Text style={s.body}>{ABOUT.body}</Text>
           <View style={s.statRow}>
-            {ABOUT_STATS.map(([n, l], i) => (
-              <View key={i} style={s.statCard}><Text style={s.statN}>{n}</Text><Text style={s.statL}>{l}</Text></View>
+            {ABOUT.stats.map((st, i) => (
+              <View key={i} style={s.statCard}><Text style={s.statN}>{pdfStat(st.n)}</Text><Text style={s.statL}>{st.l}</Text></View>
             ))}
           </View>
         </View>
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>FAMILIES WE'VE HELPED</Text>
-          <Text style={s.secTitle}>1,200+ neighbors have trusted us with their roof</Text>
+          <Text style={s.eyebrow}>{FAMILIES.eyebrow}</Text>
+          <Text style={s.secTitle}>{FAMILIES.title}</Text>
           <View style={s.cardRow}>
             {TESTIMONIALS.map((t, i) => (
               <View key={i} style={s.card} wrap={false}>
@@ -243,30 +207,30 @@ function ProposalPDF({ p, logoUrl }) {
         <Band propNum={p.prop_num} label="materials & your roof" />
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>MATERIALS WE USE & PARTNERSHIPS</Text>
-          <Text style={s.secTitle}>We only install materials we have personally vetted</Text>
+          <Text style={s.eyebrow}>{MATERIALS_SECTION.eyebrow}</Text>
+          <Text style={s.secTitle}>{MATERIALS_SECTION.title}</Text>
           <View style={s.cardRow}>
-            {MATERIALS.slice(0, 3).map(([n, t], i) => (
-              <View key={i} style={s.card}><Text style={s.cardName}>{n}</Text><Text style={s.cardTag}>{t}</Text></View>
+            {MATERIALS.slice(0, 3).map((m, i) => (
+              <View key={i} style={s.card}><Text style={s.cardName}>{m.name}</Text><Text style={s.cardTag}>{m.tag}</Text></View>
             ))}
           </View>
           <View style={s.cardRow}>
-            {MATERIALS.slice(3, 6).map(([n, t], i) => (
-              <View key={i} style={s.card}><Text style={s.cardName}>{n}</Text><Text style={s.cardTag}>{t}</Text></View>
+            {MATERIALS.slice(3, 6).map((m, i) => (
+              <View key={i} style={s.card}><Text style={s.cardName}>{m.name}</Text><Text style={s.cardTag}>{m.tag}</Text></View>
             ))}
           </View>
           <Text style={[s.eyebrow, { marginTop: 6 }]}>DISTRIBUTOR PARTNERSHIPS</Text>
           <View style={s.cardRow}>
-            {PARTNERS.map(([n, t], i) => (
-              <View key={i} style={s.card}><Text style={s.cardName}>{n}</Text><Text style={s.cardTag}>{t}</Text></View>
+            {PARTNERS.map((pt, i) => (
+              <View key={i} style={s.card}><Text style={s.cardName}>{pt.name}</Text><Text style={s.cardTag}>{pt.tag}</Text></View>
             ))}
           </View>
         </View>
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>UNDERSTANDING YOUR ROOF</Text>
-          <Text style={s.secTitle}>What we captured during your inspection</Text>
-          <Text style={s.body}>These measurements drive every part of this proposal — from how many bundles arrive on the truck to the warranty class we can offer.</Text>
+          <Text style={s.eyebrow}>{SCOPE.eyebrow}</Text>
+          <Text style={s.secTitle}>{SCOPE.title}</Text>
+          <Text style={s.body}>{SCOPE.sub}</Text>
           <View style={s.scopeRow}>
             <View style={s.scopeCard}><Text style={s.scopeLbl}>ROOF TYPE</Text><Text style={s.scopeVal}>{p.roof_type === 'tile' ? `Tile${p.tile_subtype ? ' · ' + p.tile_subtype : ''}` : 'Shingle'}</Text></View>
             <View style={s.scopeCard}><Text style={s.scopeLbl}>SQUARES</Text><Text style={s.scopeVal}>{p.squares} sq</Text></View>
@@ -287,12 +251,12 @@ function ProposalPDF({ p, logoUrl }) {
         <Band propNum={p.prop_num} label="your package options" />
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>SAME WORKMANSHIP — 3 QUALITY LEVELS</Text>
-          <Text style={s.secTitle}>Every homeowner has a different budget and need</Text>
-          <Text style={s.body}>{QUALITY_PARA}</Text>
+          <Text style={s.eyebrow}>{QUALITY.eyebrow}</Text>
+          <Text style={s.secTitle}>{QUALITY.title}</Text>
+          <Text style={s.body}>{QUALITY.body}</Text>
           <View style={s.cardRow}>
-            {QUALITY_PILLARS.map(([t, b], i) => (
-              <View key={i} style={s.card}><Text style={s.cardName}>{t}</Text><Text style={s.cardTag}>{b}</Text></View>
+            {QUALITY.pillars.map((q, i) => (
+              <View key={i} style={s.card}><Text style={s.cardName}>{q.t}</Text><Text style={s.cardTag}>{q.b}</Text></View>
             ))}
           </View>
         </View>
@@ -340,33 +304,33 @@ function ProposalPDF({ p, logoUrl }) {
         <Band propNum={p.prop_num} label="why now" />
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>TOP BENEFITS OF A NEW ROOF</Text>
-          <Text style={s.secTitle}>What a new roof actually does for you</Text>
+          <Text style={s.eyebrow}>{BENEFITS_SECTION.eyebrow}</Text>
+          <Text style={s.secTitle}>{BENEFITS_SECTION.title}</Text>
           <View style={s.cardRow}>
-            {BENEFITS.slice(0, 3).map(([t, b], i) => (
-              <View key={i} style={s.benefitCard}><Text style={s.benefitT}>{t}</Text><Text style={s.benefitB}>{b}</Text></View>
+            {BENEFITS.slice(0, 3).map((bn, i) => (
+              <View key={i} style={s.benefitCard}><Text style={s.benefitT}>{bn.t}</Text><Text style={s.benefitB}>{bn.b}</Text></View>
             ))}
           </View>
           <View style={s.cardRow}>
-            {BENEFITS.slice(3, 6).map(([t, b], i) => (
-              <View key={i} style={s.benefitCard}><Text style={s.benefitT}>{t}</Text><Text style={s.benefitB}>{b}</Text></View>
+            {BENEFITS.slice(3, 6).map((bn, i) => (
+              <View key={i} style={s.benefitCard}><Text style={s.benefitT}>{bn.t}</Text><Text style={s.benefitB}>{bn.b}</Text></View>
             ))}
           </View>
         </View>
 
         <View style={s.section}>
-          <Text style={[s.eyebrow, { color: '#991B1B' }]}>THE COST OF DOING NOTHING</Text>
-          <Text style={s.secTitle}>Roofs do not get cheaper to fix</Text>
-          <Text style={s.body}>Waiting another season usually means the cost stacks — and the surprise repairs start showing up inside the house.</Text>
+          <Text style={[s.eyebrow, { color: '#991B1B' }]}>{COST.eyebrow}</Text>
+          <Text style={s.secTitle}>{COST.title}</Text>
+          <Text style={s.body}>{COST.subShort}</Text>
           <View style={[s.cardRow, { marginBottom: 0 }]}>
-            {COST_STEPS.map(([year, b], i) => (
+            {COST.steps.map((cs, i) => (
               <View key={i} style={s.costCard} wrap={false}>
-                <Text style={s.costYear}>{year}</Text>
-                <Text style={s.costBody}>{b}</Text>
+                <Text style={s.costYear}>{cs.year}</Text>
+                <Text style={s.costBody}>{cs.b}</Text>
               </View>
             ))}
           </View>
-          <Text style={s.costCta}>The single biggest predictor of roof cost is how long you wait to start.</Text>
+          <Text style={s.costCta}>{COST.cta}</Text>
         </View>
 
         <Footer />
@@ -377,51 +341,41 @@ function ProposalPDF({ p, logoUrl }) {
         <Band propNum={p.prop_num} label="next steps" />
 
         <View style={s.section}>
-          <Text style={s.eyebrow}>WHAT HAPPENS AFTER YOU SIGN</Text>
-          <Text style={s.secTitle}>Your install in 5 simple steps</Text>
-          {PROCESS_STEPS.map(([t, b], i) => (
+          <Text style={s.eyebrow}>{PROCESS_SECTION.eyebrow}</Text>
+          <Text style={s.secTitle}>{PROCESS_SECTION.title}</Text>
+          {PROCESS_STEPS.map((st, i) => (
             <View key={i} style={s.step} wrap={false}>
               <Text style={s.stepNum}>{i + 1}</Text>
               <View style={{ flex: 1 }}>
-                <Text style={s.stepT}>{t}</Text>
-                <Text style={s.stepB}>{b}</Text>
+                <Text style={s.stepT}>{st.title}</Text>
+                <Text style={s.stepB}>{st.body}</Text>
               </View>
             </View>
           ))}
         </View>
 
         <View style={s.expBox}>
-          <Text style={s.expTitle}>It's not just a roof. It's an entire experience.</Text>
-          <Text style={s.expBody}>Most contractors stop calling once the deposit clears — we do the opposite. Every project gets its own live communication channel: a group text thread with you, the project manager, and the crew lead, plus a private shared progress link with photo updates, delivery times, and schedule. You will never wonder what is happening with your roof.</Text>
+          <Text style={s.expTitle}>{EXPERIENCE.title}</Text>
+          <Text style={s.expBody}>{`${EXPERIENCE.intro} ${EXPERIENCE.options.map(o => `${o.t}: ${o.b}`).join(' ')} ${EXPERIENCE.promise}`}</Text>
         </View>
 
         <Text style={s.secTitle}>Payment schedule</Text>
-        <Text style={[s.body, { marginBottom: 8 }]}>Three simple milestones, no hidden charges.{sel ? ` Figures below reflect your selected ${sel.name} package.` : ' Figures scale to whichever package you select.'}</Text>
+        <Text style={[s.body, { marginBottom: 8 }]}>{PAYMENT.sub}{sel ? ` Figures below reflect your selected ${sel.name} package.` : ' Figures scale to whichever package you select.'}</Text>
         <View style={s.payGrid}>
-          <View style={s.payCard} wrap={false}>
-            <Text style={s.payStep}>1 · DEPOSIT</Text>
-            <Text style={s.payAmt}>{sel ? money(deposit) : '$1,000 or 10%'}</Text>
-            <Text style={s.payWhen}>Due upon signing — locks your install slot.</Text>
-          </View>
-          <View style={s.payCard} wrap={false}>
-            <Text style={s.payStep}>2 · START</Text>
-            <Text style={s.payAmt}>{sel ? money(start) : '50%'}</Text>
-            <Text style={s.payWhen}>Due the morning the crew begins tear-off.</Text>
-          </View>
-          <View style={s.payCard} wrap={false}>
-            <Text style={s.payStep}>3 · COMPLETION</Text>
-            <Text style={s.payAmt}>{sel ? money(finalPay) : 'Balance'}</Text>
-            <Text style={s.payWhen}>Due after final walkthrough — only if you are happy.</Text>
-          </View>
+          {PAYMENT.milestones.map((m, i) => {
+            const amt = sel ? money([deposit, start, finalPay][i]) : m.fallback
+            return (
+              <View key={i} style={s.payCard} wrap={false}>
+                <Text style={s.payStep}>{m.step}</Text>
+                <Text style={s.payAmt}>{amt}</Text>
+                <Text style={s.payWhen}>{m.when}.</Text>
+              </View>
+            )
+          })}
         </View>
 
         <Text style={s.termsTitle}>TERMS & CONDITIONS</Text>
-        <Text style={s.terms}>
-          Valid 14 days. Payment: $1,000 or 10% deposit due upon signing · 50% at start · balance upon completion.
-          Late payments accrue 1.5%/month (18% APR). Wood repairs, extra layers, and permit costs added via signed Change Order.
-          Optional upgrades a customer selects on their proposal page are added to the total at signing.
-          CA Lic. C39 #1126880. Fully licensed and insured.
-        </Text>
+        <Text style={s.terms}>{TERMS.body}</Text>
 
         <Footer />
       </Page>
