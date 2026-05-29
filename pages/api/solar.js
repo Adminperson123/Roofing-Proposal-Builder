@@ -16,6 +16,9 @@
  */
 const SQ_METERS_PER_SQUARE = 9.290304
 const SQFT_PER_SQM = 10.7639
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+const orientationOf = (azimuthDeg) => COMPASS[Math.round(((azimuthDeg || 0) % 360) / 45) % 8]
+const pitchOf = (deg) => Math.max(0, Math.round(Math.tan((deg || 0) * Math.PI / 180) * 12))
 
 export default async function handler(req, res) {
   const key = process.env.GOOGLE_MAPS_API_KEY
@@ -41,26 +44,40 @@ export default async function handler(req, res) {
     }
 
     const sp = data.solarPotential
-    const segs = Array.isArray(sp.roofSegmentStats) ? sp.roofSegmentStats : []
-    const roofM2 = sp.wholeRoofStats?.areaMeters2 || segs.reduce((s, x) => s + (x.stats?.areaMeters2 || 0), 0)
+    const rawSegs = Array.isArray(sp.roofSegmentStats) ? sp.roofSegmentStats : []
+    const roofM2 = sp.wholeRoofStats?.areaMeters2 || rawSegs.reduce((s, x) => s + (x.stats?.areaMeters2 || 0), 0)
     const squares = roofM2 ? Math.round(roofM2 / SQ_METERS_PER_SQUARE) : null
 
-    // Dominant pitch = the pitch of the largest roof segment.
-    let pitch = null
-    if (segs.length) {
-      const dom = segs.reduce((a, b) => (b.stats?.areaMeters2 || 0) > (a.stats?.areaMeters2 || 0) ? b : a)
-      pitch = Math.max(0, Math.round(Math.tan((dom.pitchDegrees || 0) * Math.PI / 180) * 12))
-    }
+    // Per-facet breakdown (largest first) for the visual + table.
+    const segments = rawSegs
+      .map(s => {
+        const m2 = s.stats?.areaMeters2 || 0
+        const bb = s.boundingBox || {}
+        return {
+          areaSqft: Math.round(m2 * SQFT_PER_SQM),
+          pitch: pitchOf(s.pitchDegrees),
+          pitchDeg: s.pitchDegrees != null ? Math.round(s.pitchDegrees) : null,
+          azimuthDeg: s.azimuthDegrees != null ? Math.round(s.azimuthDegrees) : null,
+          orientation: orientationOf(s.azimuthDegrees),
+          center: s.center ? { lat: s.center.latitude, lng: s.center.longitude } : null,
+          boundingBox: (bb.sw && bb.ne) ? { sw: { lat: bb.sw.latitude, lng: bb.sw.longitude }, ne: { lat: bb.ne.latitude, lng: bb.ne.longitude } } : null,
+        }
+      })
+      .sort((a, b) => b.areaSqft - a.areaSqft)
+
+    // Dominant pitch = pitch of the largest facet (segments already sorted desc).
+    const pitch = segments.length ? segments[0].pitch : null
 
     return res.status(200).json({
       available: true,
       squares,
       pitch,
-      planes: segs.length || null,
+      planes: segments.length || null,
       areaSqft: roofM2 ? Math.round(roofM2 * SQFT_PER_SQM) : null,
       imageryQuality: data.imageryQuality || null,   // HIGH | MEDIUM | LOW
       imageryYear: data.imageryDate?.year || null,
-      lat, lng,
+      lat: Number(lat), lng: Number(lng),
+      segments,
     })
   } catch (e) {
     return res.status(200).json({ available: false, reason: e.message })

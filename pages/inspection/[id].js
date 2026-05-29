@@ -179,7 +179,7 @@ export default function InspectionForm() {
 
             {section.key === 'access'       && <SectionAccess data={sectionData} onChange={p => patchSection('access', p)} />}
             {section.key === 'system'       && <SectionSystem data={sectionData} onChange={p => patchSection('system', p)} />}
-            {section.key === 'measure'      && <SectionMeasure data={sectionData} onChange={p => patchSection('measure', p)} address={insp.customer_address} />}
+            {section.key === 'measure'      && <SectionMeasure data={sectionData} onChange={p => patchSection('measure', p)} address={insp.customer_address} inspectionId={insp.id} />}
             {section.key === 'damage'       && <SectionDamage data={sectionData} onChange={p => patchSection('damage', p)} />}
             {section.key === 'penetrations' && <SectionPenetrations data={sectionData} onChange={p => patchSection('penetrations', p)} />}
             {section.key === 'attic'        && <SectionAttic data={sectionData} onChange={p => patchSection('attic', p)} />}
@@ -367,7 +367,7 @@ function SectionSystem({ data, onChange }) {
   )
 }
 
-function SectionMeasure({ data, onChange, address }) {
+function SectionMeasure({ data, onChange, address, inspectionId }) {
   const [estimating, setEstimating] = useState(false)
   const [est, setEst] = useState(null) // { available, squares, pitch, planes, imageryYear, imageryQuality } | { available:false, reason }
 
@@ -378,7 +378,7 @@ function SectionMeasure({ data, onChange, address }) {
       const r = await fetch(`/api/solar?address=${encodeURIComponent(address)}`).then(x => x.json())
       setEst(r)
       if (r.available) {
-        const patch = { method: 'aerial' }
+        const patch = { method: 'aerial', solar: r }  // full blob powers the Roof Measurements report
         if (r.squares != null) patch.squares = String(r.squares)
         if (r.pitch != null) patch.pitch = String(r.pitch)
         if (r.planes != null) patch.planes = String(r.planes)
@@ -399,6 +399,7 @@ function SectionMeasure({ data, onChange, address }) {
           <div style={{ marginTop: 10, fontSize: 13, color: '#075985', lineHeight: 1.5 }}>
             ✓ Filled: <strong>{est.squares} sq</strong> · <strong>{est.pitch}/12</strong> · <strong>{est.planes} facets</strong>
             {est.imageryYear ? ` · ${est.imageryYear} imagery` : ''}{est.imageryQuality ? ` · ${est.imageryQuality} confidence` : ''}. Adjust if on-site differs.
+            {inspectionId && <> · <a href={`/inspection/${inspectionId}/roof`} target="_blank" rel="noreferrer" style={{ color: '#B01E17', fontWeight: 800 }}>📐 View Roof Measurements report →</a></>}
           </div>
         )}
         {est && !est.available && (
@@ -666,6 +667,9 @@ function SectionReview({ insp, onSubmit, submitted, busy }) {
         <div className="ins-review-stat"><span>Photos uploaded</span><strong>{photoCount}</strong></div>
       </div>
       {!atticOK && <div className="ins-callout" style={{borderLeftColor:'#DC2626',background:'#FEF2F2',color:'#991B1B'}}><strong>Attic inspection required.</strong> Per Alex's SOP, all inspections must include attic access (or note why declined). Go back to step 6 to complete.</div>}
+      {sec.measure?.solar && (
+        <a className="btn btn-outline" href={`/inspection/${insp.id}/roof`} target="_blank" rel="noreferrer" style={{textAlign:'center',textDecoration:'none',display:'inline-flex',alignItems:'center',justifyContent:'center'}}>📐 View Roof Measurements report</a>
+      )}
       {submitted ? (
         <a className="btn btn-primary" href={`/inspection/${insp.id}/pdf`} style={{textAlign:'center',textDecoration:'none',display:'inline-flex',alignItems:'center',justifyContent:'center'}}>📄 View Report</a>
       ) : (
