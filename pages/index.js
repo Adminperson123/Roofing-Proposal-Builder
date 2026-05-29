@@ -167,10 +167,10 @@ export default function Home() {
 
       <div className="tabs">
         <button className={`tab ${tab==='dashboard'?'on':''}`} onClick={() => setTab('dashboard')}>📊 Dashboard</button>
+        <button className={`tab ${tab==='inspections'?'on':''}`} onClick={() => setTab('inspections')}>🔍 Inspections</button>
         <button className={`tab ${tab==='builder'?'on':''}`}   onClick={() => setTab('builder')}>📋 Build</button>
         <button className={`tab ${tab==='proposals'?'on':''}`} onClick={() => setTab('proposals')}>📁 Proposals</button>
         <button className={`tab ${tab==='customers'?'on':''}`} onClick={() => setTab('customers')}>🏠 Customers</button>
-        <button className={`tab ${tab==='inspections'?'on':''}`} onClick={() => setTab('inspections')}>🔍 Inspections</button>
         <button className={`tab ${tab==='reps'?'on':''}`}      onClick={() => setTab('reps')}>👥 Team</button>
         <button className={`tab ${tab==='settings'?'on':''}`}  onClick={() => setTab('settings')}>⚙️ Settings</button>
       </div>

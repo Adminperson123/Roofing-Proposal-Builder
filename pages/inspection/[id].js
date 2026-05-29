@@ -39,7 +39,8 @@ export default function InspectionForm() {
   const [insp, setInsp] = useState(null)
   const [err, setErr] = useState('')
   const [step, setStep] = useState(0)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(false)         // autosave in flight (drives the "Saving…" hint only)
+  const [submitting, setSubmitting] = useState(false) // final submit — kept separate so a pending/stuck autosave can never block it
   const [savedAt, setSavedAt] = useState(null)
   const [uploading, setUploading] = useState(false)
   const photoRef = useRef(null)
@@ -73,28 +74,34 @@ export default function InspectionForm() {
   async function saveDraft(state, currentStep) {
     if (!state) return
     setBusy(true)
+    // Abort a hung autosave after 8s so poor on-site signal can't leave the
+    // "Saving…" state stuck (and, historically, block the submit button).
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 8000)
     try {
       const r = await fetch(`/api/inspection/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
         body: JSON.stringify({ sections: state.sections, step_completed: currentStep, recommendation_summary: state.recommendation_summary, urgency: state.urgency, rep_name: state.rep_name }),
       })
       if (r.ok) setSavedAt(new Date())
-    } catch {} finally { setBusy(false) }
+    } catch {} finally { clearTimeout(t); setBusy(false) }
   }
 
   async function submit() {
-    setBusy(true)
+    if (submitting) return
+    // Cancel any pending debounced autosave so it can't race the submit.
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    setSubmitting(true)
     try {
       const r = await fetch(`/api/inspection/${id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'submitted', sections: insp.sections, step_completed: SECTIONS.length - 1, recommendation_summary: insp.recommendation_summary, urgency: insp.urgency }),
       })
-      if (!r.ok) throw new Error('Submit failed')
+      if (!r.ok) throw new Error('Submit failed — check your connection and try again.')
       const updated = await r.json()
       setInsp(updated)
-      window.location.href = `/inspection/${id}/pdf`
-    } catch (e) { alert(e.message) }
-    finally { setBusy(false) }
+      router.push(`/inspection/${id}/pdf`)  // client nav — no full reload
+    } catch (e) { alert(e.message); setSubmitting(false) }
   }
 
   async function onPhotoFiles(fileList) {
@@ -178,7 +185,7 @@ export default function InspectionForm() {
             {section.key === 'attic'        && <SectionAttic data={sectionData} onChange={p => patchSection('attic', p)} />}
             {section.key === 'ventilation'  && <SectionVentilation data={sectionData} onChange={p => patchSection('ventilation', p)} />}
             {section.key === 'recommend'    && <SectionRecommend insp={insp} setInsp={setInsp} onSchedule={(s) => scheduleSave(s, step)} />}
-            {section.key === 'review'       && <SectionReview insp={insp} onSubmit={submit} submitted={submitted} busy={busy} />}
+            {section.key === 'review'       && <SectionReview insp={insp} onSubmit={submit} submitted={submitted} busy={submitting} />}
 
             {section.key !== 'review' && (
               <div className="ins-photos">

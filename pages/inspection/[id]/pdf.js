@@ -212,7 +212,7 @@ export default function InspectionReport() {
             <div className="r-photo-grid">
               {photos.map((p, i) => (
                 <figure key={i}>
-                  <img src={p.url} alt={p.section || ''} />
+                  <img src={p.url} alt={p.section || ''} loading="lazy" decoding="async" />
                   {p.section && <figcaption>{p.section}</figcaption>}
                 </figure>
               ))}
