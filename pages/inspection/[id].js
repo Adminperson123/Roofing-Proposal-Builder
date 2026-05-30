@@ -393,7 +393,7 @@ function SectionMeasure({ data, onChange, address, inspectionId }) {
     <>
       <div style={{ marginBottom: 14, padding: '12px 14px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 10 }}>
         <button type="button" className="btn btn-outline btn-sm" onClick={estimateFromAerial} disabled={estimating} style={{ width: '100%' }}>
-          {estimating ? '⏳ Measuring roof…' : '📐 Estimate from aerial (Google Solar)'}
+          {estimating ? '⏳ Measuring roof…' : '📐 Measure roof from address'}
         </button>
         {est && est.available && (
           <div style={{ marginTop: 10, fontSize: 13, color: '#075985', lineHeight: 1.5 }}>

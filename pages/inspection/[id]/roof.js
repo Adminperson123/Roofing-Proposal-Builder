@@ -79,16 +79,16 @@ export default function RoofReport() {
           <div className="r-block">
             <div className="r-lbl">SOURCE</div>
             <div className="r-val r-val-lg">Aerial imagery</div>
-            <div className="r-val">Google Solar{solar?.imageryYear ? ` · ${solar.imageryYear}` : ''}</div>
+            <div className="r-val">Satellite imagery{solar?.imageryYear ? ` · ${solar.imageryYear}` : ''}</div>
           </div>
         </section>
 
         {!solar ? (
-          <div className="r-empty">No aerial measurement on file. Open the inspection → Measurements → “📐 Estimate from aerial (Google Solar)” to generate it.</div>
+          <div className="r-empty">No aerial measurement on file. Open the inspection → Measurements → “📐 Measure roof from address” to generate it.</div>
         ) : (
           <>
             <div className="r-disclaimer">
-              Aerial estimate from Google Solar imagery
+              Aerial estimate from satellite imagery
               {solar.imageryQuality && <> · <span style={{ color: qColor, fontWeight: 800 }}>{solar.imageryQuality} confidence</span></>}.
               Measured roof surface (no waste factor). Verify on-site before ordering.
             </div>
