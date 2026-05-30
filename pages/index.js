@@ -258,6 +258,7 @@ function StepCustomer({ customer, setCustomer, reps = [], scope, setScope }) {
   const set = (k, v) => setCustomer(c => ({ ...c, [k]: v }))
   const [measuring, setMeasuring] = useState(false)
   const [roof, setRoof] = useState(scope?.roof || null) // aerial measurement preview
+  const [editing, setEditing] = useState(false)         // roof line editor modal
   function onAddressPick(structured) {
     setCustomer(c => ({ ...c, city: structured.city, state: structured.state, zip: structured.zip, lat: structured.lat, lng: structured.lng }))
   }
@@ -304,8 +305,20 @@ function StepCustomer({ customer, setCustomer, reps = [], scope, setScope }) {
           {roof && roof.available && (
             <div style={{ marginTop: 10, fontSize: 13, color: '#075985', lineHeight: 1.5 }}>
               ✓ <strong>{roof.squares} squares</strong> · <strong>{roof.pitch}/12</strong> · <strong>{roof.planes} planes</strong>
-              {roof.imageryYear ? ` · ${roof.imageryYear} imagery` : ''}{roof.imageryQuality ? ` · ${roof.imageryQuality} confidence` : ''}. Carried into Scope + a Roof Measurements page on the proposal.
+              {roof.edited ? ' · ✏️ adjusted' : ''}{roof.imageryYear ? ` · ${roof.imageryYear} imagery` : ''}{roof.imageryQuality ? ` · ${roof.imageryQuality} confidence` : ''}. Carried into Scope + a Roof Measurements page on the proposal.
+              {Array.isArray(roof.segments) && roof.segments.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditing(true)}>✏️ Adjust roof lines</button>
+                </div>
+              )}
             </div>
+          )}
+          {editing && roof?.available && (
+            <RoofEditor
+              roof={roof}
+              onClose={() => setEditing(false)}
+              onSave={(updated) => { setRoof(updated); if (setScope) setScope(s => ({ ...s, roof: updated, squares: updated.squares ?? s.squares, pitch: updated.pitch ?? s.pitch })); setEditing(false) }}
+            />
           )}
           {roof && !roof.available && (
             <div style={{ marginTop: 10, fontSize: 13, color: '#92400E', lineHeight: 1.5 }}>⚠ No aerial measurement — {roof.reason}. You can enter measurements manually on the Scope step.</div>

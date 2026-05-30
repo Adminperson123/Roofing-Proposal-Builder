@@ -75,7 +75,11 @@ export default async function handler(req, res) {
 
     segs.forEach((s, i) => {
       const areaM2 = (s.areaSqft || 0) / 10.7639
-      if (s.center && areaM2 > 0) {
+      if (Array.isArray(s.corners) && s.corners.length >= 3) {
+        // Rep-edited polygon — draw the exact traced shape.
+        const pts = s.corners.map(c => `${c.lat},${c.lng}`)
+        params.append('path', `color:0xF5B301dd|weight:3|fillcolor:0xF5B30130|${pts.join('|')}|${pts[0]}`)
+      } else if (s.center && areaM2 > 0) {
         const corners = orientedRectCorners(s.center, s.azimuthDeg, areaM2, bboxElongation(s.boundingBox, s.center.lat))
         params.append('path', `color:0xF5B301dd|weight:3|fillcolor:0xF5B30130|${corners.join('|')}`)
       } else if (s.boundingBox?.sw && s.boundingBox?.ne) {

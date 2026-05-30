@@ -30,8 +30,9 @@ export default async function handler(req, res) {
     maptype: 'satellite',
     key,
   })
-  // Gold marker (brand color) pinning the property.
-  params.append('markers', `color:0xD4960E|${center}`)
+  // Gold marker (brand color) pinning the property — suppressed with pin=0 so
+  // the roof editor gets a clean satellite base to draw facet lines on.
+  if (req.query.pin !== '0') params.append('markers', `color:0xD4960E|${center}`)
 
   try {
     const r = await fetch(`https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`)
