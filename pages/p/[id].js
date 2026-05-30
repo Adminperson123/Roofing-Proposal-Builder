@@ -251,6 +251,13 @@ export default function PublicProposal() {
                   </table>
                 )}
                 <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 10, fontStyle: 'italic' }}>Aerial estimate from satellite imagery — final measurements confirmed on-site.</div>
+                <img
+                  src={`/api/streetview?proposal=${p.id}${rm.lat && rm.lng ? `&lat=${rm.lat}&lng=${rm.lng}` : ''}`}
+                  alt="Street view of the property"
+                  loading="lazy"
+                  onError={e => { e.currentTarget.style.display = 'none' }}
+                  style={{ width: '100%', borderRadius: 12, border: '1px solid var(--bord)', display: 'block', marginTop: 12 }}
+                />
               </section>
             )
           })()}

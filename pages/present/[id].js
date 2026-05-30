@@ -58,6 +58,7 @@ export default function Present() {
   const slides = []
   if (p) {
     slides.push({ type: 'cover' })
+    slides.push({ type: 'flyover' })  // 3D aerial flyover (hides itself if unavailable)
     if (p.cover_letter) slides.push({ type: 'coverletter' })
     slides.push({ type: 'about' })
     slides.push({ type: 'families' })
@@ -288,6 +289,9 @@ function renderSlide(slide, p, tiers, changeOrders, photos) {
           <div className="pr-cover-meta">Proposal #{p.prop_num} · {p.squares} squares · {p.roof_type === 'tile' ? 'Tile' : 'Architectural Shingle'}</div>
         </>
       )
+
+    case 'flyover':
+      return <FlyoverSlide address={p.customer_address} />
 
     case 'coverletter':
       return (
@@ -616,6 +620,49 @@ function renderSlide(slide, p, tiers, changeOrders, photos) {
     default:
       return null
   }
+}
+
+// 3D aerial flyover slide. Aerial View renders on-demand, so the first request
+// for a new address returns "processing" — we poll a few times, then fall back
+// to a static satellite image so the slide is never empty.
+function FlyoverSlide({ address }) {
+  const [state, setState] = useState('loading') // loading | active | processing | unavailable
+  const [mp4, setMp4] = useState(null)
+
+  useEffect(() => {
+    if (!address) { setState('unavailable'); return }
+    let tries = 0, stop = false, timer = null
+    const poll = async () => {
+      try {
+        const d = await fetch(`/api/aerialview?address=${encodeURIComponent(address)}`).then(r => r.json())
+        if (stop) return
+        if (d.state === 'active' && d.mp4) { setMp4(d.mp4); setState('active'); return }
+        if (d.state === 'processing' && tries < 3) { tries++; timer = setTimeout(poll, 6000); setState('processing'); return }
+        setState(d.state === 'processing' ? 'processing' : 'unavailable')
+      } catch { if (!stop) setState('unavailable') }
+    }
+    poll()
+    return () => { stop = true; if (timer) clearTimeout(timer) }
+  }, [address])
+
+  return (
+    <>
+      <div className="pr-eyebrow">YOUR PROPERTY</div>
+      <h1 className="pr-title">A look from above</h1>
+      {state === 'active' && mp4 && (
+        <video src={mp4} autoPlay loop muted playsInline controls
+          style={{ width: '100%', maxWidth: 760, margin: '12px auto 0', borderRadius: 14, border: '1px solid rgba(255,255,255,.12)' }} />
+      )}
+      {state !== 'active' && (
+        <>
+          <img src={`/api/staticmap?address=${encodeURIComponent(address || '')}&zoom=19`} alt="Aerial view of the property"
+            onError={e => { e.currentTarget.style.display = 'none' }}
+            style={{ width: '100%', maxWidth: 760, margin: '12px auto 0', borderRadius: 14, border: '1px solid rgba(255,255,255,.12)', display: 'block' }} />
+          {state === 'processing' && <div className="pr-lede" style={{ marginTop: 14 }}>A cinematic 3D flyover of this home is rendering — it'll appear here once ready.</div>}
+        </>
+      )}
+    </>
+  )
 }
 
 function Center({ children }) {

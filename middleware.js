@@ -18,6 +18,8 @@ const PUBLIC_PATHS = [
   '/api/change-orders',    // public list of customer-toggleable adders
   '/api/brand-assets',     // public read of brand asset URLs (used by /p/[id])
   '/api/roofmap',          // public read of the annotated roof aerial (used by /p/[id] + PDF; id-gated, image only)
+  '/api/streetview',       // public read of the curb-shot image (used by /p/[id]; image only)
+  '/api/aerialview',       // public read of the 3D flyover lookup (used by /present + /p/[id])
   '/api/cron/',            // scheduled jobs — gated by their own CRON_SECRET bearer, not the admin cookie
   '/logo.png',
   '/favicon.ico',
