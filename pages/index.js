@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { calcPrices, DEFAULT_SETTINGS, DEFAULT_TEMPLATES } from '../lib/pricing'
+import RoofEditor from '../components/RoofEditor'
 
 const ADDON_DEFS = [
   { id:'icewater',  label:'Ice & Water Shield Upgrade', icon:'🧊' },
