@@ -66,6 +66,7 @@ async function handler(req, res) {
         permit_amount: +scope.permit || 0,
         solar_panels: +scope.solarPanels || 0,
         addons: scope.addons || [],
+        roof_measurements: scope.roof || null,
         tiers,
         cover_letter: coverLetter,
         photo_urls: customer.photoUrls || [],

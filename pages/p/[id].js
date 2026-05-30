@@ -225,6 +225,36 @@ export default function PublicProposal() {
             )}
           </section>
 
+          {/* 5b — Roof measurements (aerial breakdown, when captured) */}
+          {p.roof_measurements && (() => {
+            const rm = p.roof_measurements
+            const td = { padding: '8px 12px', borderBottom: '1px solid var(--bord)' }
+            return (
+              <section className="pub-roof">
+                <div className="pub-section-title">📐 ROOF MEASUREMENTS</div>
+                <p className="pub-section-sub" style={{ marginBottom: 14 }}>An aerial breakdown of your roof — measured plane by plane.</p>
+                <img src={`/api/roofmap?proposal=${p.id}`} alt="Aerial roof breakdown" loading="lazy" style={{ width: '100%', borderRadius: 12, border: '1px solid var(--bord)', display: 'block' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginTop: 12 }}>
+                  {[['SQUARES', rm.squares ?? '—'], ['PITCH', rm.pitch != null ? `${rm.pitch}/12` : '—'], ['PLANES', rm.planes ?? '—'], ['ROOF SQFT', rm.areaSqft ? rm.areaSqft.toLocaleString() : '—']].map(([l, v], i) => (
+                    <div key={i} style={{ background: 'var(--navy)', color: '#fff', borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--gold)', lineHeight: 1 }}>{v}</div>
+                      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, color: 'rgba(255,255,255,.65)', marginTop: 6 }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {Array.isArray(rm.segments) && rm.segments.length > 0 && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 12 }}>
+                    <thead><tr style={{ background: 'var(--navy)', color: '#fff' }}>{['#', 'Area (sqft)', 'Pitch', 'Facing'].map((h, i) => <th key={i} style={{ textAlign: 'left', fontSize: 10, fontWeight: 900, letterSpacing: 1, padding: '8px 12px' }}>{h}</th>)}</tr></thead>
+                    <tbody>{rm.segments.map((s, i) => (
+                      <tr key={i}><td style={td}>{i + 1}</td><td style={td}>{s.areaSqft?.toLocaleString() || '—'}</td><td style={td}>{s.pitch != null ? `${s.pitch}/12` : '—'}</td><td style={td}>{s.orientation || '—'}</td></tr>
+                    ))}</tbody>
+                  </table>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 10, fontStyle: 'italic' }}>Aerial estimate from satellite imagery — final measurements confirmed on-site.</div>
+              </section>
+            )
+          })()}
+
           {photos.length > 0 && (
             <section className="pub-photos">
               <div className="pub-section-title">📸 PHOTOS FROM YOUR INSPECTION</div>

@@ -237,7 +237,7 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
 
       <main className="main">
         <div className="card">
-          {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} reps={reps} />}
+          {step === 0 && <StepCustomer customer={customer} setCustomer={setCustomer} reps={reps} scope={scope} setScope={setScope} />}
           {step === 1 && <StepScope    scope={scope}       setScope={setScope} />}
           {step === 2 && <StepPhotos   photos={photos}     setPhotos={setPhotos} scope={scope} setScope={setScope} />}
           {step === 3 && <StepReview   customer={customer} scope={scope} photos={photos} onGenerate={onGenerate} generating={generating} genError={genError} settings={settings} tierConfig={tierConfig} setTierConfig={setTierConfig} />}
@@ -254,10 +254,23 @@ function BuilderFlow({ step, setStep, customer, setCustomer, scope, setScope, ph
   )
 }
 
-function StepCustomer({ customer, setCustomer, reps = [] }) {
+function StepCustomer({ customer, setCustomer, reps = [], scope, setScope }) {
   const set = (k, v) => setCustomer(c => ({ ...c, [k]: v }))
+  const [measuring, setMeasuring] = useState(false)
+  const [roof, setRoof] = useState(scope?.roof || null) // aerial measurement preview
   function onAddressPick(structured) {
     setCustomer(c => ({ ...c, city: structured.city, state: structured.state, zip: structured.zip, lat: structured.lat, lng: structured.lng }))
+  }
+  async function measureRoof() {
+    const q = (customer.lat && customer.lng) ? `lat=${customer.lat}&lng=${customer.lng}` : (customer.address ? `address=${encodeURIComponent(customer.address)}` : '')
+    if (!q) { setRoof({ available: false, reason: 'enter the property address first' }); return }
+    setMeasuring(true); setRoof(null)
+    try {
+      const r = await fetch(`/api/solar?${q}`).then(x => x.json())
+      setRoof(r)
+      // Real numbers from the aerial engine flow into Scope + the saved proposal.
+      if (r.available && setScope) setScope(s => ({ ...s, roof: r, squares: r.squares ?? s.squares, pitch: r.pitch ?? s.pitch }))
+    } catch (e) { setRoof({ available: false, reason: e.message }) } finally { setMeasuring(false) }
   }
   return (
     <div>
@@ -284,6 +297,20 @@ function StepCustomer({ customer, setCustomer, reps = [] }) {
           </div>
         )}
         <PropertyMap lat={customer.lat} lng={customer.lng} address={customer.address} />
+        <div className="field full" style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 10, padding: '12px 14px' }}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={measureRoof} disabled={measuring} style={{ width: '100%' }}>
+            {measuring ? '⏳ Measuring roof…' : '📐 Measure roof from address'}
+          </button>
+          {roof && roof.available && (
+            <div style={{ marginTop: 10, fontSize: 13, color: '#075985', lineHeight: 1.5 }}>
+              ✓ <strong>{roof.squares} squares</strong> · <strong>{roof.pitch}/12</strong> · <strong>{roof.planes} planes</strong>
+              {roof.imageryYear ? ` · ${roof.imageryYear} imagery` : ''}{roof.imageryQuality ? ` · ${roof.imageryQuality} confidence` : ''}. Carried into Scope + a Roof Measurements page on the proposal.
+            </div>
+          )}
+          {roof && !roof.available && (
+            <div style={{ marginTop: 10, fontSize: 13, color: '#92400E', lineHeight: 1.5 }}>⚠ No aerial measurement — {roof.reason}. You can enter measurements manually on the Scope step.</div>
+          )}
+        </div>
         <div className="field full">
           <label>Inspection Notes / Project Detail</label>
           <textarea rows={3} value={customer.notes} onChange={e=>set('notes',e.target.value)} placeholder="Auto-template based on roof type — edit as needed" />

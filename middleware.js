@@ -17,6 +17,7 @@ const PUBLIC_PATHS = [
   '/api/proposal/',        // public proposal API (id-gated, public read OK)
   '/api/change-orders',    // public list of customer-toggleable adders
   '/api/brand-assets',     // public read of brand asset URLs (used by /p/[id])
+  '/api/roofmap',          // public read of the annotated roof aerial (used by /p/[id] + PDF; id-gated, image only)
   '/api/cron/',            // scheduled jobs — gated by their own CRON_SECRET bearer, not the admin cookie
   '/logo.png',
   '/favicon.ico',

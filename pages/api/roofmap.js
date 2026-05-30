@@ -1,22 +1,50 @@
 /**
- * Annotated roof map — Google Static Maps satellite with each Solar facet drawn.
+ * Annotated roof map — Google Static Maps satellite with each facet drawn.
  *
- * Reads the stored Solar measurement (by inspection or proposal id), then
- * streams a satellite image with every roof plane outlined as a gold rectangle
- * (its bounding box) and a numbered crimson pin at its center — matching the
- * facet table in the Roof Measurements report.
+ * Reads the stored roof measurement (by inspection or proposal id) and streams
+ * a satellite image with each roof plane drawn as an ANGLED rectangle oriented
+ * to that facet's direction (so it reads like a hand-traced roof plan, not flat
+ * boxes) plus a numbered crimson pin. The drawn shapes are a VISUAL — the real
+ * areas/pitch come from the measurement data and are shown in the report table.
  *
- *   GET /api/roofmap?inspection=<id>
- *   GET /api/roofmap?proposal=<id>
+ *   GET /api/roofmap?inspection=<id>   |   GET /api/roofmap?proposal=<id>
  *
- * Server-proxied (key hidden). Returns 404 when no key / no stored measurement,
- * so the client <img> hides gracefully. Facet count is capped to stay within
- * the Static Maps URL length limit; numbered labels only go 1–9 (Static Maps
- * marker labels are a single char), boxes still draw beyond that.
+ * Server-proxied (key hidden). 404 when no key / no measurement so the client
+ * <img> hides. Facet count capped for the Static Maps URL length limit.
  */
 import { serverClient } from '../../lib/supabase'
 
 const MAX_FACETS = 12
+const M_PER_DEG_LAT = 111320
+
+// Four corners of a rectangle centered at `center`, sized to `areaM2`, elongated
+// by `aspect` (ridge:slope), and rotated to face `azimuthDeg`. Flat-earth offset
+// math — plenty accurate at a single roof's scale. Returns "lat,lng" strings.
+function orientedRectCorners(center, azimuthDeg, areaM2, aspect) {
+  const ratio = Math.min(Math.max(aspect || 1.4, 1), 2.6)
+  const slope = Math.sqrt(areaM2 / ratio)
+  const ridge = ratio * slope
+  const dS = slope / 2, dR = ridge / 2
+  const az = (azimuthDeg || 0) * Math.PI / 180
+  const azp = az + Math.PI / 2
+  const mPerDegLng = M_PER_DEG_LAT * Math.cos(center.lat * Math.PI / 180)
+  const order = [[1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]
+  return order.map(([s, r]) => {
+    const north = s * dS * Math.cos(az) + r * dR * Math.cos(azp)
+    const east = s * dS * Math.sin(az) + r * dR * Math.sin(azp)
+    const lat = center.lat + north / M_PER_DEG_LAT
+    const lng = center.lng + east / mPerDegLng
+    return `${lat.toFixed(7)},${lng.toFixed(7)}`
+  })
+}
+
+function bboxElongation(bb, lat) {
+  if (!bb?.sw || !bb?.ne) return 1.4
+  const h = Math.abs(bb.ne.lat - bb.sw.lat) * M_PER_DEG_LAT
+  const w = Math.abs(bb.ne.lng - bb.sw.lng) * M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180)
+  if (!h || !w) return 1.4
+  return Math.max(w / h, h / w)
+}
 
 export default async function handler(req, res) {
   const key = process.env.GOOGLE_MAPS_API_KEY
@@ -24,49 +52,45 @@ export default async function handler(req, res) {
 
   const { inspection, proposal } = req.query
   try {
-    // 1. Load the stored Solar blob from whichever record was referenced.
     const sb = serverClient()
-    let solar = null
+    let roof = null
     if (inspection) {
       const { data } = await sb.from('inspections').select('sections').eq('id', inspection).single()
-      solar = data?.sections?.measure?.solar || null
+      roof = data?.sections?.measure?.solar || null
     } else if (proposal) {
       const { data } = await sb.from('proposals').select('roof_measurements').eq('id', proposal).single()
-      solar = data?.roof_measurements || null
+      roof = data?.roof_measurements || null
     } else {
       return res.status(400).end()
     }
-    if (!solar || (!solar.lat && !solar.segments?.length)) return res.status(404).end()
+    if (!roof || (!roof.lat && !roof.segments?.length)) return res.status(404).end()
 
-    // 2. Build the Static Maps URL — satellite, framed on the building.
-    // Center on the roof centroid (robust against a stray facet coordinate;
-    // auto-fit zooms out to include outliers, which framed the whole block).
-    const segs = (solar.segments || []).filter(s => s.boundingBox || s.center).slice(0, MAX_FACETS)
+    const segs = (roof.segments || []).filter(s => s.center || s.boundingBox).slice(0, MAX_FACETS)
     const centers = segs.map(s => s.center).filter(Boolean)
     const ctr = centers.length
       ? { lat: centers.reduce((a, c) => a + c.lat, 0) / centers.length, lng: centers.reduce((a, c) => a + c.lng, 0) / centers.length }
-      : { lat: solar.lat, lng: solar.lng }
+      : { lat: roof.lat, lng: roof.lng }
+
     const params = new URLSearchParams({ size: '640x420', scale: '2', maptype: 'satellite', center: `${ctr.lat},${ctr.lng}`, zoom: '20', key })
 
     segs.forEach((s, i) => {
-      const bb = s.boundingBox
-      if (bb?.sw && bb?.ne) {
-        const { sw, ne } = bb
-        // Rectangle path (gold outline, faint fill) tracing the facet bbox.
-        params.append('path', `color:0xF5B301cc|weight:3|fillcolor:0xF5B30126|${sw.lat},${sw.lng}|${ne.lat},${sw.lng}|${ne.lat},${ne.lng}|${sw.lat},${ne.lng}|${sw.lat},${sw.lng}`)
+      const areaM2 = (s.areaSqft || 0) / 10.7639
+      if (s.center && areaM2 > 0) {
+        const corners = orientedRectCorners(s.center, s.azimuthDeg, areaM2, bboxElongation(s.boundingBox, s.center.lat))
+        params.append('path', `color:0xF5B301dd|weight:3|fillcolor:0xF5B30130|${corners.join('|')}`)
+      } else if (s.boundingBox?.sw && s.boundingBox?.ne) {
+        const { sw, ne } = s.boundingBox
+        params.append('path', `color:0xF5B301dd|weight:3|fillcolor:0xF5B30130|${sw.lat},${sw.lng}|${ne.lat},${sw.lng}|${ne.lat},${ne.lng}|${sw.lat},${ne.lng}|${sw.lat},${sw.lng}`)
       }
       if (s.center) {
-        const label = i < 9 ? `label:${i + 1}|` : '' // Static Maps labels: single char
+        const label = i < 9 ? `label:${i + 1}|` : ''
         params.append('markers', `size:mid|color:0xB01E17|${label}${s.center.lat},${s.center.lng}`)
       }
     })
 
-    // If we somehow have no drawable facets, at least center on the building.
     if (![...params.keys()].includes('path') && ![...params.keys()].includes('markers')) {
-      if (!solar.lat || !solar.lng) return res.status(404).end()
-      params.set('center', `${solar.lat},${solar.lng}`)
-      params.set('zoom', '20')
-      params.append('markers', `color:0xB01E17|${solar.lat},${solar.lng}`)
+      if (!roof.lat || !roof.lng) return res.status(404).end()
+      params.append('markers', `color:0xB01E17|${roof.lat},${roof.lng}`)
     }
 
     const r = await fetch(`https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`)

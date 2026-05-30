@@ -124,7 +124,8 @@ function Band({ propNum, label }) {
   )
 }
 
-function ProposalPDF({ p, logoUrl }) {
+function ProposalPDF({ p, logoUrl, roofMapUrl }) {
+  const rm = p.roof_measurements || null
   const tiers = p.tiers || {}
   const tierKeys = (Array.isArray(tiers._visible) && tiers._visible.length ? tiers._visible : ['good','better','best'])
     .filter(k => ['good','better','best'].includes(k))
@@ -379,6 +380,44 @@ function ProposalPDF({ p, logoUrl }) {
 
         <Footer />
       </Page>
+
+      {/* ── PAGE 6 (conditional) — roof measurements ── */}
+      {rm && (
+        <Page size="LETTER" style={s.page}>
+          <Band propNum={p.prop_num} label="roof measurements" />
+          <View style={s.section}>
+            <Text style={s.eyebrow}>ROOF MEASUREMENTS</Text>
+            <Text style={s.secTitle}>An aerial breakdown of your roof</Text>
+            <Text style={s.body}>Measured plane by plane from aerial imagery — final measurements confirmed on-site.</Text>
+            {roofMapUrl && <Image src={roofMapUrl} style={{ width: '100%', borderRadius: 6, marginBottom: 10 }} />}
+            <View style={s.statRow}>
+              {[['SQUARES', rm.squares ?? '—'], ['PITCH', rm.pitch != null ? `${rm.pitch}/12` : '—'], ['PLANES', rm.planes ?? '—'], ['ROOF SQFT', rm.areaSqft ? rm.areaSqft.toLocaleString() : '—']].map(([l, v], i) => (
+                <View key={i} style={s.statCard}><Text style={s.statN}>{v}</Text><Text style={s.statL}>{l}</Text></View>
+              ))}
+            </View>
+          </View>
+          {Array.isArray(rm.segments) && rm.segments.length > 0 && (
+            <View style={s.section}>
+              <Text style={[s.eyebrow, { marginBottom: 6 }]}>PLANE-BY-PLANE BREAKDOWN</Text>
+              <View style={[s.cardRow, { backgroundColor: NAVY, borderRadius: 4, marginBottom: 0 }]}>
+                {['#', 'Area (sqft)', 'Squares', 'Pitch', 'Facing'].map((h, i) => (
+                  <Text key={i} style={{ flex: i === 0 ? 0.4 : 1, color: '#fff', fontSize: 7.5, fontWeight: 'bold', padding: 6 }}>{h}</Text>
+                ))}
+              </View>
+              {rm.segments.map((seg, i) => (
+                <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: BORDER }} wrap={false}>
+                  <Text style={{ flex: 0.4, fontSize: 8, padding: 6 }}>{i + 1}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, padding: 6 }}>{seg.areaSqft?.toLocaleString() || '—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, padding: 6 }}>{seg.areaSqft ? (seg.areaSqft / 100).toFixed(1) : '—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, padding: 6 }}>{seg.pitch != null ? `${seg.pitch}/12` : '—'}</Text>
+                  <Text style={{ flex: 1, fontSize: 8, padding: 6 }}>{seg.orientation || '—'}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <Footer />
+        </Page>
+      )}
     </Document>
   )
 }
@@ -391,8 +430,11 @@ export default async function handler(req, res) {
 
   try {
     const base = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`
-    const logoUrl = `${base.replace(/\/$/, '')}/logo.png`
-    const stream = await renderToStream(<ProposalPDF p={data} logoUrl={logoUrl} />)
+    const root = base.replace(/\/$/, '')
+    const logoUrl = `${root}/logo.png`
+    // Only request the annotated roof image when a measurement exists.
+    const roofMapUrl = data.roof_measurements ? `${root}/api/roofmap?proposal=${data.id}` : null
+    const stream = await renderToStream(<ProposalPDF p={data} logoUrl={logoUrl} roofMapUrl={roofMapUrl} />)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="GPR_${data.prop_num}.pdf"`)
     stream.pipe(res)
