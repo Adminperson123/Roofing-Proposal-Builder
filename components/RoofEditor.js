@@ -107,6 +107,18 @@ export default function RoofEditor({ roof, onSave, onClose }) {
   }
   const addFacet = () => setFacets(fs => [...fs, { id: Date.now(), pitch: roof?.pitch ?? 4, orientation: '', pts: [{ x: W / 2 - 40, y: H / 2 - 30 }, { x: W / 2 + 40, y: H / 2 - 30 }, { x: W / 2 + 40, y: H / 2 + 30 }, { x: W / 2 - 40, y: H / 2 + 30 }] }])
   const delFacet = (fi) => setFacets(fs => fs.filter((_, i) => i !== fi))
+  // Insert a vertex at the midpoint of edge `ei` (between vi ei and ei+1) so a
+  // rectangle can become an L, a hex, follow a real ridgeline — the fix for
+  // "blocky". The new point starts at the edge midpoint, then is grabbed to drag.
+  const addPointOnEdge = (fi, ei) => setFacets(fs => fs.map((f, i) => {
+    if (i !== fi) return f
+    const a = f.pts[ei], b = f.pts[(ei + 1) % f.pts.length]
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    const pts = [...f.pts.slice(0, ei + 1), mid, ...f.pts.slice(ei + 1)]
+    return { ...f, pts }
+  }))
+  // Remove a vertex (a polygon needs ≥3).
+  const delVertex = (fi, vi) => setFacets(fs => fs.map((f, i) => (i !== fi || f.pts.length <= 3) ? f : { ...f, pts: f.pts.filter((_, v) => v !== vi) }))
   const reset = () => setFacets(segsIn.map((s, i) => ({ id: i, pitch: s.pitch ?? roof?.pitch ?? 0, orientation: s.orientation || '', pts: (s.center ? seedCorners(s.center, s.azimuthDeg, (s.areaSqft || 100) / SQFT_PER_SQM, aspectOf(s.boundingBox, s.center?.lat)) : []).map(c => toPx(c.lat, c.lng)) })).filter(f => f.pts.length >= 3))
 
   const save = () => {
@@ -130,7 +142,7 @@ export default function RoofEditor({ roof, onSave, onClose }) {
     <div style={ov} onClick={onClose}>
       <div style={modal} onClick={e => e.stopPropagation()}>
         <div style={head}>
-          <div><strong style={{ fontSize: 16 }}>✏️ Adjust roof lines</strong><div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Drag the dots to trace the real roof. Totals update live.</div></div>
+          <div><strong style={{ fontSize: 16 }}>✏️ Adjust roof lines</strong><div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Drag red dots to move corners · tap a gold <b>+</b> to add one · double-tap a corner to remove it. Totals update live.</div></div>
           <button onClick={onClose} style={xBtn}>×</button>
         </div>
 
@@ -147,10 +159,25 @@ export default function RoofEditor({ roof, onSave, onClose }) {
                   onMouseDown={e => { const p = evtToSvg(e); setSel(fi); setDrag({ fi, ox: p.x, oy: p.y, start: f.pts }) }}
                   onTouchStart={e => { const p = evtToSvg(e); setSel(fi); setDrag({ fi, ox: p.x, oy: p.y, start: f.pts }) }} />
                 <text x={f.pts.reduce((a, p) => a + p.x, 0) / f.pts.length} y={f.pts.reduce((a, p) => a + p.y, 0) / f.pts.length} fill="#fff" fontSize="13" fontWeight="900" textAnchor="middle" dominantBaseline="middle" style={{ pointerEvents: 'none', textShadow: '0 1px 3px #000' }}>{fi + 1}</text>
+                {/* Edge midpoints — small gold "+" handles; tap to add a corner there. */}
+                {fi === sel && f.pts.map((p, vi) => {
+                  const b = f.pts[(vi + 1) % f.pts.length]
+                  const mx = (p.x + b.x) / 2, my = (p.y + b.y) / 2
+                  return (
+                    <g key={`e${vi}`} style={{ cursor: 'copy' }}
+                      onMouseDown={e => { e.stopPropagation(); addPointOnEdge(fi, vi); setDrag({ fi, vi: vi + 1 }) }}
+                      onTouchStart={e => { e.stopPropagation(); addPointOnEdge(fi, vi); setDrag({ fi, vi: vi + 1 }) }}>
+                      <circle cx={mx} cy={my} r="6" fill="#F5B301" stroke="#fff" strokeWidth="1.5" opacity="0.85" />
+                      <text x={mx} y={my} fill="#0C1C38" fontSize="11" fontWeight="900" textAnchor="middle" dominantBaseline="middle" style={{ pointerEvents: 'none' }}>+</text>
+                    </g>
+                  )
+                })}
+                {/* Corner handles — drag to move; double-tap to delete (≥3 kept). */}
                 {fi === sel && f.pts.map((p, vi) => (
                   <circle key={vi} cx={p.x} cy={p.y} r="7" fill="#B01E17" stroke="#fff" strokeWidth="2" style={{ cursor: 'grab' }}
                     onMouseDown={e => { e.stopPropagation(); setDrag({ fi, vi }) }}
-                    onTouchStart={e => { e.stopPropagation(); setDrag({ fi, vi }) }} />
+                    onTouchStart={e => { e.stopPropagation(); setDrag({ fi, vi }) }}
+                    onDoubleClick={e => { e.stopPropagation(); delVertex(fi, vi) }} />
                 ))}
               </g>
             ))}
