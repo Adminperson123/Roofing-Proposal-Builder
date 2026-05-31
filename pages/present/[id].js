@@ -26,6 +26,7 @@ import {
   EXPERIENCE, GUARANTEE, LICENSE_SECTION, LICENSE_BADGES, NOT_INCLUDED_SECTION, NOT_INCLUDED,
   REP, FAQ_SECTION, FAQS, TERMS, PAYMENT,
 } from '../../lib/content'
+import Model3D from '../../components/Model3D'
 
 const TIER_ORDER = ['good', 'better', 'best']
 
@@ -59,6 +60,7 @@ export default function Present() {
   if (p) {
     slides.push({ type: 'cover' })
     slides.push({ type: 'flyover' })  // 3D aerial flyover (hides itself if unavailable)
+    if (p.roof_measurements?.lat && p.roof_measurements?.lng) slides.push({ type: 'model3d' })
     if (p.cover_letter) slides.push({ type: 'coverletter' })
     slides.push({ type: 'about' })
     slides.push({ type: 'families' })
@@ -292,6 +294,15 @@ function renderSlide(slide, p, tiers, changeOrders, photos) {
 
     case 'flyover':
       return <FlyoverSlide address={p.customer_address} />
+
+    case 'model3d':
+      return (
+        <>
+          <div className="pr-eyebrow">YOUR HOME IN 3D</div>
+          <h1 className="pr-title">An interactive model of your property</h1>
+          <Model3D lat={p.roof_measurements?.lat} lng={p.roof_measurements?.lng} />
+        </>
+      )
 
     case 'coverletter':
       return (
